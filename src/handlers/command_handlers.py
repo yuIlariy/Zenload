@@ -1,8 +1,10 @@
 import logging
+import asyncio
 from typing import Optional
 from telegram import Update, LabeledPrice
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram.error import Forbidden, RetryAfter, TelegramError
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +13,7 @@ class CommandHandlers:
         self.keyboard_builder = keyboard_builder
         self.settings_manager = settings_manager
         self.localization = localization
+        self.ADMIN_ID = 6318135266  # Your Telegram ID
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Check if user is an admin in the current chat"""
@@ -167,3 +170,49 @@ class CommandHandlers:
         )
         
         await message_handler._process_url(url, update, context)
+
+    async def broadcast_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Admin only: Send a message to every user in the database"""
+        user_id = update.effective_user.id
+        
+        if user_id != self.ADMIN_ID:
+            return 
+
+        if not context.args:
+            await update.message.reply_text("❌ Usage: /broadcast [your message]")
+            return
+
+        broadcast_text = " ".join(context.args)
+        # Fetch all user IDs from the async database
+        cursor = self.settings_manager.db.user_settings.find({}, {"user_id": 1})
+        users = await cursor.to_list(length=None)
+
+        sent_count = 0
+        blocked_count = 0
+        
+        status_msg = await update.message.reply_text(f"🚀 Starting broadcast to {len(users)} users...")
+
+        for user_doc in users:
+            target_id = user_doc['user_id']
+            try:
+                await context.bot.send_message(chat_id=target_id, text=broadcast_text, parse_mode='HTML')
+                sent_count += 1
+                # Anti-flood sleep
+                await asyncio.sleep(0.05) 
+            except Forbidden:
+                blocked_count += 1
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+                await context.bot.send_message(chat_id=target_id, text=broadcast_text, parse_mode='HTML')
+                sent_count += 1
+            except TelegramError as e:
+                logger.error(f"Failed to send to {target_id}: {e}")
+                pass
+
+        await status_msg.edit_text(
+            f"✅ <b>Broadcast Complete</b>\n\n"
+            f"👤 Total users found: {len(users)}\n"
+            f"📤 Successfully sent: {sent_count}\n"
+            f"🚫 Blocked/Bot stopped: {blocked_count}",
+            parse_mode=ParseMode.HTML
+        )
