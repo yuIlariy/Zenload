@@ -28,31 +28,30 @@ class YouTubeDownloader(BaseDownloader):
         return url
 
     async def get_formats(self, url: str) -> List[Dict]:
-        """Get formats with JS challenge support enabled"""
+        """Get formats using the now-installed Node.js runtime to solve signatures"""
         try:
             self.update_progress('status_getting_info', 0)
             processed_url = self.preprocess_url(url)
             
-            # Options matched to your successful terminal test
+            # Clean options that let yt-dlp use the system Node.js
             extract_opts = {
                 'format': 'bestvideo+bestaudio/best',
                 'quiet': True,
-                'no_warnings': False, # Enabled to see JS issues in logs
+                'no_warnings': True,
                 'noplaylist': True,
-                # Explicitly allow remote components to help solve n-challenges
-                'allow_unsecure_scripts': True, 
             }
             if self.cookie_file.exists():
                 extract_opts['cookiefile'] = str(self.cookie_file)
             
             with yt_dlp.YoutubeDL(extract_opts) as ydl:
+                # With Node.js installed, this will no longer fail with 'format not available'
                 info = await asyncio.to_thread(ydl.extract_info, str(processed_url), download=False)
                 
                 if info and 'formats' in info:
                     formats = []
                     seen = set()
                     for f in info['formats']:
-                        # Skip storyboard 'sb' formats and audio-only
+                        # Filter for valid video streams and ignore storyboards
                         if f.get('height') and f.get('vcodec') != 'none' and 'storyboard' not in f.get('format_note', '').lower():
                             quality = f"{f['height']}p"
                             if quality not in seen:
@@ -62,20 +61,16 @@ class YouTubeDownloader(BaseDownloader):
                                     'ext': f['ext']
                                 })
                                 seen.add(quality)
-                    
-                    if not formats:
-                        raise DownloadError("No valid video formats found.")
-                        
                     return sorted(formats, key=lambda x: int(x['quality'][:-1]), reverse=True)
             
-            raise DownloadError("YouTube manifest extraction failed.")
+            raise DownloadError("No playable formats found.")
 
         except Exception as e:
             logger.error(f"[YouTube] Extraction failed: {e}")
             raise DownloadError(f"Extraction error: {str(e)}")
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """Download phase using the solved JS signatures"""
+        """Download phase using high-quality merging"""
         try:
             self.update_progress('status_downloading', 0)
             processed_url = self.preprocess_url(url)
@@ -83,8 +78,7 @@ class YouTubeDownloader(BaseDownloader):
             download_dir.mkdir(exist_ok=True)
 
             ydl_opts = {
-                # Force standard mp4 merging as per your terminal successful formats
-                'format': f"{format_id}+bestaudio[ext=m4a]/best" if format_id else "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+                'format': f"{format_id}+bestaudio/best" if format_id else "bestvideo+bestaudio/best",
                 'merge_output_format': 'mp4',
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
                 'progress_hooks': [self._progress_hook],
@@ -100,7 +94,7 @@ class YouTubeDownloader(BaseDownloader):
                 if file_path.exists():
                     return self._prepare_metadata(info, processed_url), file_path
 
-            raise DownloadError("File verification failed after download.")
+            raise DownloadError("Download failed.")
 
         except Exception as e:
             logger.error(f"[YouTube] Download failed: {e}")
