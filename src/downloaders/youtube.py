@@ -178,7 +178,7 @@ class YouTubeDownloader(BaseDownloader):
         channel = info.get('uploader', '')
         channel_url = info.get('uploader_url', url)
 
-        return f"YouTube | {views} | {likes}\nby <a href=\"{channel_url}\">{channel}</a>"
+        return f"⚡YouTube | {views} | {likes}\n\n✨By <a href=\"{channel_url}\">{channel}</a>\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
 
     def _progress_hook(self, d: Dict[str, Any]):
         """Progress hook for yt-dlp"""
