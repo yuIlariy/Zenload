@@ -15,12 +15,17 @@ class DownloadError(Exception):
     """Custom exception for download errors"""
     pass
 
+
 class BaseDownloader(ABC):
     """Base class for all platform-specific downloaders"""
-    
+
     def __init__(self):
-        # Load platform-specific options from config
+        # Load platform-specific options
         self.ydl_opts = YTDLP_OPTIONS.get(self.platform_id(), {}).copy()
+
+        # 🔥 CRITICAL FIX: Remove forced format (causing your error)
+        self.ydl_opts.pop('format', None)
+
         self._progress_callback = None
         self._loop = None
 
@@ -38,59 +43,52 @@ class BaseDownloader(ABC):
             )
 
     def _progress_hook(self, d: Dict[str, Any]):
-        """Progress hook for yt-dlp status updates"""
+        """Progress hook for yt-dlp"""
         if d['status'] == 'downloading' and self._progress_callback:
             try:
                 total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                 downloaded = d.get('downloaded_bytes', 0)
+
                 if total > 0:
-                    # Scale between 10-90% to account for pre/post processing
-                    progress = int((downloaded / total) * 80) + 10  
+                    progress = int((downloaded / total) * 80) + 10
                     self.update_progress('status_downloading', progress)
+
             except Exception as e:
                 logger.error(f"Error in progress hook: {e}")
 
     @staticmethod
     def _prepare_filename(title: str) -> str:
-        """Prepare safe filename from title"""
+        """Prepare safe filename"""
         safe_title = re.sub(r'[<>:"/\\|?*]', '', title)
         return safe_title[:100]
 
     @abstractmethod
     def platform_id(self) -> str:
-        """Return the platform identifier"""
         pass
 
     @abstractmethod
     def can_handle(self, url: str) -> bool:
-        """Check if this downloader can handle the given URL"""
         pass
 
     def preprocess_url(self, url: str) -> str:
-        """Preprocess URL before downloading"""
         return url
 
     @abstractmethod
     async def get_formats(self, url: str) -> List[Dict]:
-        """
-        FIX: Forced as abstract method.
-        This ensures the bot uses the specialized logic in youtube.py 
-        instead of the broken generic version that was here.
-        """
         pass
 
     def format_metadata(self, info: Dict) -> str:
-        """Format content metadata for display"""
+        """Format metadata"""
         metadata = []
-        
+
         if title := info.get('title'):
             clean_title = re.sub(r'#\w+\s*', '', title).strip()
             if clean_title:
                 metadata.append(clean_title)
-            
+
         if uploader := info.get('uploader'):
             metadata.append(f"By: {uploader}")
-        
+
         if view_count := info.get('view_count'):
             if view_count >= 1_000_000:
                 metadata.append(f"Views: {view_count/1_000_000:.1f}M")
@@ -98,37 +96,44 @@ class BaseDownloader(ABC):
                 metadata.append(f"Views: {view_count/1_000:.1f}K")
             else:
                 metadata.append(f"Views: {view_count}")
-        
+
         return " | ".join(metadata)
 
     async def download(self, url: str, format_id: str = None) -> Tuple[str, Path]:
-        """Download content with platform-specific options"""
+        """Download content with safe fallback handling"""
         try:
             self.update_progress('status_downloading', 0)
             url = self.preprocess_url(url)
-            
-            # Use local opts copy to prevent cross-request pollution
+
+            # Fresh copy (prevents bugs between requests)
             current_opts = self.ydl_opts.copy()
+
             temp_filename = f"zen_{self.platform_id()}_{os.urandom(4).hex()}"
             current_opts['outtmpl'] = str(DOWNLOADS_DIR / f"{temp_filename}.%(ext)s")
-            
-            # Apply format selection only if requested
+
+            # 🔥 FIXED FORMAT HANDLING (fallback chain)
             if format_id:
-                current_opts['format'] = f"{format_id}+bestaudio/best"
-            
+                current_opts['format'] = (
+                    f"{format_id}+bestaudio/"
+                    f"{format_id}/"
+                    f"bestvideo+bestaudio/"
+                    f"best"
+                )
+            else:
+                current_opts['format'] = "bestvideo+bestaudio/best"
+
             current_opts['progress_hooks'] = [self._progress_hook]
 
             def download_content():
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
-            # Run blocking yt-dlp call in a separate thread
             info = await asyncio.to_thread(download_content)
 
             if not info:
                 raise DownloadError("Failed to get content information")
 
-            # Verify downloaded file existence
+            # Find downloaded file
             downloaded_file = None
             for file in DOWNLOADS_DIR.glob(f"{temp_filename}.*"):
                 if file.is_file():
@@ -136,9 +141,10 @@ class BaseDownloader(ABC):
                     break
 
             if not downloaded_file:
-                raise DownloadError("File was downloaded but not found in the system")
+                raise DownloadError("File was downloaded but not found")
 
             self.update_progress('status_downloading', 100)
+
             return self.format_metadata(info), downloaded_file
 
         except Exception as e:
