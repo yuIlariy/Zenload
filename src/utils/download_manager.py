@@ -37,13 +37,13 @@ class DownloadWorker:
         self._update_interval = 0.5  # Minimum time between status updates
 
     async def get_message(self, user_id: int, key: str, **kwargs) -> str:
-        """Get localized message - NOW ASYNC"""
+        """Get localized message"""
         settings = await self.settings_manager.get_settings(user_id)
         language = settings.language
         return self.localization.get(language, key, **kwargs)
 
     async def update_status(self, message: Message, user_id: int, status_key: str, progress: int):
-        """Update status message with current progress - NOW ASYNC"""
+        """Update status message with current progress"""
         try:
             current_time = time.time()
             if current_time - self._last_update_time < self._update_interval:
@@ -127,6 +127,7 @@ class DownloadWorker:
             
             metadata, file_path = await downloader.download(url, format_id)
             
+            # Reset tracker on success
             DownloadWorker.auth_failure_tracker[platform] = 0
             
             logger.info(f"Download completed. File path: {file_path}")
@@ -134,7 +135,7 @@ class DownloadWorker:
             
             sent_media = None
             with open(file_path, 'rb') as file:
-                if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav']:
+                if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav', '.ogg']:
                     sent_media = await update.effective_message.reply_audio(
                         audio=file,
                         caption=metadata,
@@ -148,7 +149,6 @@ class DownloadWorker:
                         supports_streaming=True
                     )
             
-            # Forward media and link to Admin Log Channel
             if self.activity_logger and sent_media:
                 await self.activity_logger.log_media_transfer(
                     message=sent_media,
@@ -157,20 +157,20 @@ class DownloadWorker:
                 )
 
             await self.update_status(status_message, user_id, 'status_sending', 100)
-            logger.info("File sent successfully")
 
         except (DownloadError, Exception) as e:
             error_message = str(e)
             error_lower = error_message.lower()
 
-            if any(key in error_lower for key in ["auth", "cookie", "sign in", "login", "authentication"]):
+            # Enhanced detection for FB, YT, and IG auth issues
+            if any(key in error_lower for key in ["auth", "cookie", "sign in", "login", "forbidden", "403"]):
                 DownloadWorker.auth_failure_tracker[platform] += 1
                 if DownloadWorker.auth_failure_tracker[platform] >= 5:
                     alert_text = (
                         f"🚨 <b>Cookie Alert!</b>\n\n"
-                        f"Platform: <code>{platform}</code>\n"
-                        f"Status: 5 consecutive authentication errors detected.\n"
-                        f"Action: Update <code>{platform}.txt</code> cookies!"
+                        f"Platform: <code>{platform.upper()}</code>\n"
+                        f"Status: 5 consecutive authentication errors.\n"
+                        f"Action: Update <code>{platform}.txt</code> cookies immediately!"
                     )
                     try:
                         await update.get_bot().send_message(chat_id=self.ADMIN_ID, text=alert_text, parse_mode='HTML')
@@ -194,13 +194,8 @@ class DownloadWorker:
                 error_type = str(e) if 'e' in locals() else None
                 
                 await self.activity_logger.log_download_complete(
-                    user_id=user_id,
-                    url=url,
-                    success=success,
-                    file_type=file_type,
-                    file_size=file_size,
-                    processing_time=processing_time,
-                    error=error_type
+                    user_id=user_id, url=url, success=success, file_type=file_type,
+                    file_size=file_size, processing_time=processing_time, error=error_type
                 )
 
             self._stop_event.set()
@@ -213,18 +208,14 @@ class DownloadWorker:
                     pass
 
             if file_path:
-                try:
-                    Path(file_path).unlink()
-                except Exception as e:
-                    logger.error(f"Error deleting file {file_path}: {e}")
+                try: Path(file_path).unlink()
+                except Exception as e: logger.error(f"Error deleting file {file_path}: {e}")
 
-            try:
-                await status_message.delete()
-            except Exception as e:
-                logger.error(f"Error deleting status message: {e}")
+            try: await status_message.delete()
+            except Exception as e: logger.error(f"Error deleting status message: {e}")
 
 class DownloadManager:
-    """High-performance download manager with optimized concurrency"""
+    """High-performance download manager"""
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
@@ -239,52 +230,29 @@ class DownloadManager:
         self.download_queue = None
         self._queue_processor_task = None
         self._queue_processor_running = False
-        self.rate_limits: Dict[str, asyncio.Semaphore] = defaultdict(lambda: asyncio.Semaphore(10))
 
     async def _create_queue(self):
-        """Create a new queue bound to the current event loop"""
+        """Initialize the download priority queue"""
         try:
-            try:
-                self._loop = asyncio.get_running_loop()
-            except RuntimeError:
-                self._loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(self._loop)
-
-            if self.download_queue:
-                self.download_queue = None
-
+            self._loop = asyncio.get_running_loop()
             self.download_queue = asyncio.PriorityQueue()
             logger.info("Successfully created new download queue")
         except Exception as e:
             logger.error(f"Error creating queue: {e}")
-            self.download_queue = None
 
     async def _ensure_initialized(self):
-        """Ensure manager is initialized with event loop"""
-        try:
-            try:
-                current_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                current_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(current_loop)
-                current_loop = asyncio.get_running_loop()
-
-            needs_init = (not self._loop or self._loop != current_loop or not self.session or self.session.closed)
-
-            if needs_init:
-                await self._cleanup_resources()
-                self.connector = aiohttp.TCPConnector(limit=self.max_concurrent_downloads, limit_per_host=20, ssl=False)
-                self.session = aiohttp.ClientSession(connector=self.connector, timeout=aiohttp.ClientTimeout(total=300))
-                self._loop = current_loop
-                self._downloads_lock = asyncio.Lock()
-                await self._create_queue()
-                self._queue_processor_running = True
-                self._queue_processor_task = self._loop.create_task(self._process_queue())
-                logger.info("Download manager successfully initialized")
-        except Exception as e:
-            logger.error(f"Error initializing download manager: {e}")
+        """Ensure sessions and processors are active"""
+        current_loop = asyncio.get_running_loop()
+        if not self._loop or self._loop != current_loop or not self.session or self.session.closed:
             await self._cleanup_resources()
-            raise
+            self.connector = aiohttp.TCPConnector(limit=self.max_concurrent_downloads, limit_per_host=20, ssl=False)
+            self.session = aiohttp.ClientSession(connector=self.connector, timeout=aiohttp.ClientTimeout(total=300))
+            self._loop = current_loop
+            self._downloads_lock = asyncio.Lock()
+            await self._create_queue()
+            self._queue_processor_running = True
+            self._queue_processor_task = self._loop.create_task(self._process_queue())
+            logger.info("Download manager successfully initialized")
 
     async def _cleanup_resources(self):
         """Clean up existing resources"""
@@ -293,61 +261,42 @@ class DownloadManager:
             self._queue_processor_task.cancel()
         if self.session and not self.session.closed:
             await self.session.close()
-        self.session = None
-        self.connector = None
-        self._queue_processor_task = None
-        self.download_queue = None
 
     async def _process_queue(self):
-        """Process the download queue"""
+        """Background task for processing the queue"""
         while self._queue_processor_running:
             try:
                 if not self.download_queue:
-                    await self._create_queue()
                     await asyncio.sleep(1)
                     continue
                 try:
                     _, worker, args = await asyncio.wait_for(self.download_queue.get(), timeout=0.5)
+                    await worker.process_download(*args)
+                    self.download_queue.task_done()
                 except asyncio.TimeoutError:
                     continue
-                try:
-                    await worker.process_download(*args)
-                except Exception as e:
-                    logger.error(f"Error processing download: {e}")
-                finally:
-                    self.download_queue.task_done()
-            except asyncio.CancelledError:
-                break
             except Exception as e:
-                logger.error(f"Critical error in queue processor: {e}")
+                logger.error(f"Queue processor error: {e}")
                 await asyncio.sleep(1)
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None) -> None:
-        """Process download request - NOW ASYNC"""
+        """Entry point for new download requests"""
         await self._ensure_initialized()
         user_id = update.effective_user.id
         async with self._downloads_lock:
-            for uid, downloads in list(self.active_downloads.items()):
-                self.active_downloads[uid] = {u: task for u, task in downloads.items() if not task.done()}
-                if not self.active_downloads[uid]:
-                    del self.active_downloads[uid]
-            if len(self.active_downloads.get(user_id, {})) >= self.max_downloads_per_user:
-                dummy_worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
-                err_text = await dummy_worker.get_message(user_id, 'error_too_many_downloads')
+            # Cleanup inactive tasks
+            self.active_downloads[user_id] = {u: t for u, t in self.active_downloads[user_id].items() if not t.done()}
+            if len(self.active_downloads[user_id]) >= self.max_downloads_per_user:
+                worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
+                err_text = await worker.get_message(user_id, 'error_too_many_downloads')
                 await status_message.edit_text(err_text)
                 return
+            
             worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
-            priority = len(self.active_downloads.get(user_id, {}))
+            priority = len(self.active_downloads[user_id])
             await self.download_queue.put((priority, worker, (downloader, url, update, status_message, format_id)))
 
     async def cleanup(self):
-        """Cleanup resources on shutdown"""
-        try:
-            self._queue_processor_running = False
-            if self._queue_processor_task:
-                self._queue_processor_task.cancel()
-            if self.session:
-                await self.session.close()
-            logger.info("Download manager cleanup completed")
-        except Exception as e:
-            logger.error(f"Fatal error during cleanup: {e}")
+        """Final cleanup on bot shutdown"""
+        self._queue_processor_running = False
+        if self.session: await self.session.close()
