@@ -114,6 +114,9 @@ class ZenloadBot:
         self.application.add_handler(CommandHandler("donate", self.command_handlers.donate_command))
         self.application.add_handler(CommandHandler("paysupport", self.command_handlers.paysupport_command))
         
+        # Admin Broadcast Command (NEW)
+        self.application.add_handler(CommandHandler("broadcast", self.command_handlers.broadcast_command))
+        
         # Payment handlers
         self.application.add_handler(PreCheckoutQueryHandler(self.payment_handlers.pre_checkout_callback))
         
