@@ -48,16 +48,25 @@ YTDLP_OPTIONS = {
         'no_check_certificate': True
     },
     'youtube': {
-        # FIX: Removed the restrictive 'bestvideo[ext=mp4]...' string
-        # Using 'best' here prevents the "Requested format is not available" crash
         'format': 'bestvideo+bestaudio/best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'ignoreerrors': False,
         'quiet': True,
-        # Ensure cookies are globally applied to YouTube
         'cookiefile': str(COOKIES_DIR / 'youtube.txt')
+    },
+    'facebook': {
+        'format': 'best',
+        'nooverwrites': True,
+        'no_color': True,
+        'no_warnings': True,
+        'ignoreerrors': False,
+        'quiet': True,
+        'cookiefile': str(COOKIES_DIR / 'facebook.txt'),
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
     },
     'yandex_music': {
         'format': 'bestaudio/best',
@@ -69,7 +78,7 @@ YTDLP_OPTIONS = {
     }
 }
 
-# Logging Configuration (remains the same)
+# Logging Configuration
 LOGGING_CONFIG = {
     'version': 1,
     'disable_existing_loggers': True,
