@@ -9,6 +9,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Отправьте ссылку на видео или музыку для скачивания из:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
+            "🔵 • Facebook\n"  # Added Facebook
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
             "☁️ • SoundCloud\n\n"
@@ -28,7 +29,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_ask': "Спрашивать каждый раз",
         'btn_best': "Лучшее",
         'btn_donate': "Поддержать",
-        'btn_updates': "📢 Канал обновлений", # New button text added
+        'btn_updates': "📢 Канал обновлений",
         'help': (
             "Как использовать:\n\n"
             "1. Отправьте ссылку\n"
@@ -44,6 +45,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Поддерживаются:\n"
             "• Instagram\n"
             "• TikTok\n"
+            "• Facebook\n"  # Added Facebook
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
@@ -98,7 +100,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
         'missing_url': "Пожалуйста, укажите ссылку после команды /zen",
-        # Status messages
         'status_getting_info': "Получение информации... ({progress}%)",
         'status_downloading': "Загрузка... ({progress}%)",
         'status_processing': "Обработка... ({progress}%)",
@@ -106,7 +107,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'admin_only': "Только администраторы могут изменять настройки группы",
         'group_settings_menu': "Настройки группы\n\nЯзык: {language}\nКачество: {quality}",
         'settings_unchanged': "Настройки не изменились",
-        # Rate limit and concurrent download messages
         'error_too_many_downloads': (
             "Слишком много одновременных загрузок.\n"
             "Пожалуйста, подождите завершения текущих загрузок или попробуйте позже."
@@ -120,6 +120,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Send a video or music link to download from:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
+            "🔵 • Facebook\n"  # Added Facebook
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
             "☁️ • SoundCloud\n\n"
@@ -139,7 +140,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_ask': "Ask",
         'btn_best': "Best",
         'btn_donate': "Support",
-        'btn_updates': "📢 Updates Channel", # New button text added
+        'btn_updates': "📢 Updates Channel",
         'help': (
             "How to use:\n\n"
             "1. Send URL\n"
@@ -155,6 +156,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Supported:\n"
             "• Instagram\n"
             "• TikTok\n"
+            "• Facebook\n"  # Added Facebook
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
@@ -209,7 +211,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
         'missing_url': "Please provide a URL after the /zen command",
-        # Status messages
         'status_getting_info': "Getting information... ({progress}%)",
         'status_downloading': "Downloading... ({progress}%)",
         'status_processing': "Processing... ({progress}%)",
@@ -217,7 +218,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'admin_only': "Only administrators can modify group settings",
         'group_settings_menu': "Group Settings\n\nLanguage: {language}\nQuality: {quality}",
         'settings_unchanged': "Settings remain unchanged",
-        # Rate limit and concurrent download messages
         'error_too_many_downloads': (
             "Too many concurrent downloads.\n"
             "Please wait for current downloads to complete or try again later."
@@ -231,13 +231,11 @@ class Localization:
     def get(lang: str, key: str, **kwargs) -> str:
         """
         Get localized string by key and format it with provided kwargs
-        Falls back to English if key not found in selected language
         """
         try:
             text = LOCALES.get(lang, LOCALES['en'])[key]
             return text.format(**kwargs) if kwargs else text
         except (KeyError, ValueError) as e:
-            # Fallback to English if key not found or formatting fails
             try:
                 text = LOCALES['en'][key]
                 return text.format(**kwargs) if kwargs else text
