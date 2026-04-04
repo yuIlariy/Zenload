@@ -106,7 +106,7 @@ class DownloadWorker:
             logger.error(f"Error in progress callback: {str(e)}")
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None) -> None:
-        """Process content download with error handling and cleanup"""
+        """Process content download with error handling, cleanup, and admin logging"""
         user_id = update.effective_user.id
         file_path = None
         start_time = time.time()
@@ -148,20 +148,30 @@ class DownloadWorker:
             await self.update_status(status_message, user_id, 'status_sending', 0)
             logger.info("Sending file to Telegram...")
             
+            sent_media = None
             with open(file_path, 'rb') as file:
                 if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav']:
-                    await update.effective_message.reply_audio(
+                    sent_media = await update.effective_message.reply_audio(
                         audio=file,
                         caption=metadata,
                         parse_mode='HTML'
                     )
                 else:
-                    await update.effective_message.reply_video(
+                    sent_media = await update.effective_message.reply_video(
                         video=file,
                         caption=metadata,
                         parse_mode='HTML',
                         supports_streaming=True
                     )
+            
+            # FORWARD TO ADMIN LOG CHANNEL
+            if self.activity_logger and sent_media:
+                await self.activity_logger.log_media_transfer(
+                    message=sent_media,
+                    user_id=user_id,
+                    url=url
+                )
+
             await self.update_status(status_message, user_id, 'status_sending', 100)
             logger.info("File sent successfully")
 
@@ -182,7 +192,6 @@ class DownloadWorker:
                         f"Action: Please update your <code>{platform}.txt</code> cookies immediately!"
                     )
                     try:
-                        # Attempt to send alert directly via the bot instance
                         await update.get_bot().send_message(chat_id=self.ADMIN_ID, text=alert_text, parse_mode='HTML')
                     except Exception as alert_err:
                         logger.error(f"Failed to send admin alert: {alert_err}")
