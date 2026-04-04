@@ -72,7 +72,7 @@ class PinterestDownloader(BaseDownloader):
         )
         
         if file_path and file_path.exists():
-            metadata = f"Pinterest\n<a href=\"{url}\">Ссылка</a>"
+            metadata = f"Pinterest\n<a href=\"{url}\">Video Link</a>"
             return metadata, file_path
         
         # === Fallback to yt-dlp ===
