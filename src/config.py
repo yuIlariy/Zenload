@@ -29,6 +29,7 @@ YTDLP_OPTIONS = {
         'quiet': True,
         'no_check_certificate': True
     },
+
     'tiktok': {
         'format': 'best',
         'nooverwrites': True,
@@ -42,13 +43,16 @@ YTDLP_OPTIONS = {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
         },
-        'extractor_args': {'TikTok': {
-            'api_hostname': 'api16-normal-c-useast1a.tiktokv.com'
-        }},
+        'extractor_args': {
+            'TikTok': {
+                'api_hostname': 'api16-normal-c-useast1a.tiktokv.com'
+            }
+        },
         'no_check_certificate': True
     },
+
+    # 🔥 FIXED: REMOVE format completely for YouTube
     'youtube': {
-        'format': 'bestvideo+bestaudio/best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -56,6 +60,7 @@ YTDLP_OPTIONS = {
         'quiet': True,
         'cookiefile': str(COOKIES_DIR / 'youtube.txt')
     },
+
     'facebook': {
         'format': 'best',
         'nooverwrites': True,
@@ -68,6 +73,7 @@ YTDLP_OPTIONS = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
     },
+
     'yandex_music': {
         'format': 'bestaudio/best',
         'nooverwrites': True,
