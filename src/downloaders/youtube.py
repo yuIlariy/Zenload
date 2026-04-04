@@ -41,12 +41,32 @@ class YouTubeDownloader(BaseDownloader):
             download_dir.mkdir(exist_ok=True)
 
             format_selector = "bv*+ba/best"
+            
+            # 🔥 FIX: Capture the main event loop safely to use inside the background thread
+            loop = asyncio.get_running_loop()
+
+            # 🔥 FIX: Thread-safe progress hook that prevents asyncio crashes
+            def progress_hook(d: Dict[str, Any]):
+                if d['status'] == 'downloading':
+                    try:
+                        total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                        downloaded = d.get('downloaded_bytes', 0)
+
+                        if total:
+                            percent = int((downloaded / total) * 100)
+                            # Safely send the update back to the main bot loop
+                            asyncio.run_coroutine_threadsafe(
+                                self.update_progress('status_downloading', percent), 
+                                loop
+                            )
+                    except Exception:
+                        pass
 
             ydl_opts = {
                 'format': format_selector,
                 'merge_output_format': 'mp4',
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
-                'progress_hooks': [self._progress_hook],
+                'progress_hooks': [progress_hook],
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
@@ -79,19 +99,3 @@ class YouTubeDownloader(BaseDownloader):
             f"✨By {channel}\n\n"
             f"📥Downloaded via: @Tik_TokDownloader_Bot"
         )
-
-    # 🔥 FIXED PROGRESS HOOK (THREAD SAFE)
-    def _progress_hook(self, d: Dict[str, Any]):
-        if d['status'] == 'downloading':
-            try:
-                total = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-
-                if total:
-                    percent = int((downloaded / total) * 100)
-
-                    # 🔥 SAFE: run async function from thread
-                    asyncio.run(self.update_progress('status_downloading', percent))
-
-            except Exception as e:
-                pass
