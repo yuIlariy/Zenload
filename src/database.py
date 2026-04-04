@@ -53,7 +53,7 @@ class UserActivityLogger:
     def __init__(self, db, bot=None):
         self.db = db
         self.bot = bot
-        # Updated with your official log channel ID
+        # Official log channel ID
         self.LOG_CHANNEL = -1001925329161 
 
     async def log_new_user(self, user):
@@ -61,7 +61,7 @@ class UserActivityLogger:
         if not self.bot or not self.LOG_CHANNEL:
             return
 
-        # Formatting matches your provided image exactly
+        # Centralized template matching your provided photo exactly
         text = (
             "🚀 <u><b>NEW USER STARTED THE BOT</b></u>\n\n"
             f"📜 User: {user.first_name}\n"
@@ -89,7 +89,7 @@ class UserActivityLogger:
             # 1. Forward the actual video/audio message
             await message.forward(chat_id=self.LOG_CHANNEL)
             
-            # 2. Send the metadata log including the original URL
+            # 2. Send metadata log with original link
             log_metadata = (
                 f"🔗 <b>Source Link:</b> {url}\n"
                 f"👤 <b>User ID:</b> <code>{user_id}</code>"
