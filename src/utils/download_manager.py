@@ -30,10 +30,8 @@ class DownloadWorker:
 
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
-
         self._last_update_time = 0
         self._update_interval = 1.0
-
         self._start_time = None
 
     # 🔥 Progress bar
@@ -41,7 +39,7 @@ class DownloadWorker:
         filled = int(length * percent / 100)
         return "█" * filled + "░" * (length - filled)
 
-    # 🔥 Speed + ETA
+    # 🔥 Format progress
     def format_progress(self, prefix: str, current: int, total: int) -> str:
         percent = int((current / total) * 100) if total else 0
         bar = self.build_progress_bar(percent)
@@ -49,7 +47,6 @@ class DownloadWorker:
         elapsed = time.time() - self._start_time if self._start_time else 1
         speed = current / elapsed if elapsed > 0 else 0
         speed_mb = speed / (1024 * 1024)
-
         remaining = (total - current) / speed if speed > 0 else 0
 
         return (
@@ -67,17 +64,25 @@ class DownloadWorker:
         except:
             pass
 
+    # 🔥 FIX: async upload progress
     async def upload_progress(self, current, total):
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
 
+    # 🔥 FIX: sync wrapper (CRITICAL)
+    def upload_progress_sync(self, current, total):
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self.upload_progress(current, total))
+        except:
+            pass
+
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
-        user_id = update.effective_user.id
         file_path = None
 
         try:
             self._current_message = status_message
-            self._current_user_id = user_id
+            self._current_user_id = update.effective_user.id
             self._start_time = time.time()
 
             downloader.set_progress_callback(self._download_progress)
@@ -91,32 +96,25 @@ class DownloadWorker:
             file_size = Path(file_path).stat().st_size
             chat_id = update.effective_chat.id
 
-            # SMALL FILE → Bot API
+            # SMALL FILE
             if file_size < 50 * 1024 * 1024:
                 with open(file_path, 'rb') as file:
-                    if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav', '.ogg']:
-                        await update.effective_message.reply_audio(audio=file, caption=metadata)
-                    else:
-                        await update.effective_message.reply_video(video=file, caption=metadata, supports_streaming=True)
+                    await update.effective_message.reply_video(
+                        video=file,
+                        caption=metadata,
+                        supports_streaming=True
+                    )
 
-            # LARGE FILE → Pyrogram
+            # LARGE FILE
             else:
                 async with UPLOAD_LIMIT:
-                    if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav', '.ogg']:
-                        await pyro_app.send_audio(
-                            chat_id=chat_id,
-                            audio=str(file_path),
-                            caption=metadata,
-                            progress=self.upload_progress
-                        )
-                    else:
-                        await pyro_app.send_video(
-                            chat_id=chat_id,
-                            video=str(file_path),
-                            caption=metadata,
-                            supports_streaming=True,
-                            progress=self.upload_progress
-                        )
+                    await pyro_app.send_video(
+                        chat_id=chat_id,
+                        video=str(file_path),
+                        caption=metadata,
+                        supports_streaming=True,
+                        progress=self.upload_progress_sync  # 🔥 FIXED
+                    )
 
             await self.update_message("✅ Done!")
 
@@ -148,44 +146,12 @@ class DownloadManager:
         self.max_concurrent_downloads = max_concurrent_downloads
         self.max_downloads_per_user = max_downloads_per_user
         self.activity_logger = activity_logger
-        self.connector = None
         self.session = None
-        self._loop = None
-        self.active_downloads: Dict[int, Dict[str, asyncio.Task]] = defaultdict(dict)
-        self._downloads_lock = None
-        self.download_queue = None
-        self._queue_processor_task = None
-        self._queue_processor_running = False
-
-    async def _create_queue(self):
-        self.download_queue = asyncio.PriorityQueue()
-
-    async def _ensure_initialized(self):
-        if not self.session or self.session.closed:
-            self.connector = aiohttp.TCPConnector(limit=self.max_concurrent_downloads, ssl=False)
-            self.session = aiohttp.ClientSession(connector=self.connector)
-            self._downloads_lock = asyncio.Lock()
-            await self._create_queue()
-            self._queue_processor_running = True
-            self._queue_processor_task = asyncio.create_task(self._process_queue())
-
-    async def _process_queue(self):
-        while self._queue_processor_running:
-            try:
-                _, worker, args = await self.download_queue.get()
-                await worker.process_download(*args)
-                self.download_queue.task_done()
-            except Exception as e:
-                logger.error(f"Queue error: {e}")
+        self._downloads_lock = asyncio.Lock()
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
-        await self._ensure_initialized()
-
-        user_id = update.effective_user.id
-
-        async with self._downloads_lock:
-            worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
-            await self.download_queue.put((0, worker, (downloader, url, update, status_message, format_id)))
+        worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
+        await worker.process_download(downloader, url, update, status_message, format_id)
 
     async def cleanup(self):
         if self.session:
