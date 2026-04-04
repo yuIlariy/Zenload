@@ -6,6 +6,7 @@ import aiohttp
 from typing import Dict, Optional
 import time
 from collections import defaultdict
+import pyrogram
 
 from src.utils.pyro_client import app as pyro_app
 from pyrogram.enums import ParseMode as PyroParseMode
@@ -58,8 +59,15 @@ class DownloadWorker:
             pass
 
     async def upload_progress(self, current, total, *args):
-        text = self.format_progress("⬆️ Uploading (Pyrogram)...", current, total)
-        await self.update_message(text)
+        try:
+            # Print to VPS console so we can prove Pyrogram is actually working!
+            if current % (1024 * 1024 * 5) < 1024 * 1024:  # Log roughly every 5MB
+                logger.info(f"🚀 Pyrogram Uploading: {current/1024/1024:.1f}MB / {total/1024/1024:.1f}MB")
+                
+            text = self.format_progress("⬆️ Uploading (Pyrogram)...", current, total)
+            await self.update_message(text)
+        except Exception as e:
+            logger.error(f"Failed to update progress UI: {e}")
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
@@ -116,11 +124,18 @@ class DownloadWorker:
 
             # 🔥 LARGE FILE (> 50MB) - Pyrogram
             else:
-                await self.update_message("⬆️ Preparing large upload...\n(Bypassing limits...)")
+                await self.update_message("⬆️ Preparing large upload...\n(Bypassing Telegram 50MB limit...)")
                 logger.info(f"Pyrogram starting upload for chat {chat_id}, file size: {file_size/1024/1024:.2f} MB")
                 
-                # Removed the UPLOAD_LIMIT semaphore here to prevent deadlocks!
-                # Wrapped in a 10-minute timeout so it CANNOT hang forever silently.
+                # 1. Force Pyrogram to verify the chat exists to prevent silent freezes
+                try:
+                    logger.info("Pinging chat via Pyrogram...")
+                    await pyro_app.send_chat_action(chat_id=chat_id, action=pyrogram.enums.ChatAction.UPLOAD_VIDEO)
+                    logger.info("Chat ping successful! Uploading...")
+                except Exception as ping_e:
+                    logger.error(f"Pyrogram chat ping failed (might be uncached peer): {ping_e}")
+                
+                # 2. Start the massive upload
                 try:
                     if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
                         sent_media = await asyncio.wait_for(
@@ -128,7 +143,7 @@ class DownloadWorker:
                                 chat_id=chat_id, audio=str(file_path), caption=metadata,
                                 progress=self.upload_progress, parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600.0 # 10 minute max timeout
+                            timeout=600.0 
                         )
                     else:
                         sent_media = await asyncio.wait_for(
@@ -137,11 +152,11 @@ class DownloadWorker:
                                 supports_streaming=True, progress=self.upload_progress, 
                                 parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600.0 # 10 minute max timeout
+                            timeout=600.0 
                         )
-                    logger.info("Pyrogram upload successful.")
+                    logger.info("✅ Pyrogram upload successful.")
                 except asyncio.TimeoutError:
-                    logger.error("Pyrogram upload timed out after 10 minutes!")
+                    logger.error("❌ Pyrogram upload timed out after 10 minutes!")
                     await self.update_message("❌ Upload timed out. The file might be too large.")
                     return
 
