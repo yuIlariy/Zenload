@@ -1,8 +1,8 @@
-aiohttp==3.11.10
+aiohttp>=3.11.10
 instaloader>=4.10.1
-motor
-python-dotenv==1.0.1
-python-telegram-bot==21.9
-requests==2.32.3
-yandex_music==2.2.0
-yt_dlp==2024.12.13
+motor>=3.6.0
+python-dotenv>=1.0.1
+python-telegram-bot>=21.9
+requests>=2.32.3
+yandex_music>=2.2.0
+yt_dlp>=2025.01.26
