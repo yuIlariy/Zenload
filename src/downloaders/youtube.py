@@ -32,39 +32,34 @@ class YouTubeDownloader(BaseDownloader):
             return f'https://www.youtube.com/watch?v={video_id}'
         return url
 
-    def _get_base_opts(self) -> Dict:
-        """Standard options shared by both info and download tasks"""
-        opts = {
-            'nooverwrites': True,
-            'no_color': True,
-            'no_warnings': True,
-            'quiet': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9'
-            }
-        }
-        if self.cookie_file.exists():
-            opts['cookiefile'] = str(self.cookie_file)
-        return opts
-
     async def get_formats(self, url: str) -> List[Dict]:
-        """Get formats using completely unrestricted options to prevent 'Requested format not available'"""
+        """Get formats using a Clean Slate to prevent 'format not available' errors"""
         try:
             self.update_progress('status_getting_info', 0)
             processed_url = self.preprocess_url(url)
             
-            # Use base options WITHOUT any format restrictions
-            ydl_opts = self._get_base_opts()
+            # FIX: Do not use any helper methods here. 
+            # Use a bare-minimum dict to ensure NO 'format' key is sent.
+            clean_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'no_color': True,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                }
+            }
+            if self.cookie_file.exists():
+                clean_opts['cookiefile'] = str(self.cookie_file)
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(clean_opts) as ydl:
+                # We extract info without specifying a format so yt-dlp lists EVERYTHING available
                 info = await asyncio.to_thread(ydl.extract_info, str(processed_url), download=False)
                 
                 if info and 'formats' in info:
                     formats = []
                     seen = set()
                     for f in info['formats']:
+                        # Filter for actual video streams with a resolution
                         if f.get('vcodec') != 'none' and f.get('height'):
                             quality = f"{f['height']}p"
                             if quality not in seen:
@@ -76,29 +71,31 @@ class YouTubeDownloader(BaseDownloader):
                                 seen.add(quality)
                     return sorted(formats, key=lambda x: int(x['quality'][:-1]), reverse=True)
             
-            raise DownloadError("No formats found")
+            raise DownloadError("No formats found for this video")
 
         except Exception as e:
             logger.error(f"[YouTube] Format extraction failed: {e}")
             raise DownloadError(f"Extraction error: {str(e)}")
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """Download with strict format only when the user has actually selected one"""
+        """Download using high-quality selection only during the actual download phase"""
         try:
             self.update_progress('status_downloading', 0)
             processed_url = self.preprocess_url(url)
             download_dir = (Path(__file__).parent.parent.parent / "downloads").resolve()
             download_dir.mkdir(exist_ok=True)
 
-            ydl_opts = self._get_base_opts()
-            # Only apply strict format if format_id is provided; otherwise use best quality
-            ydl_opts.update({
+            # Standard download options
+            ydl_opts = {
                 'format': f"{format_id}+bestaudio/best" if format_id else "bestvideo+bestaudio/best",
                 'merge_output_format': 'mp4',
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
                 'progress_hooks': [self._progress_hook],
+                'no_warnings': True,
                 'quiet': False
-            })
+            }
+            if self.cookie_file.exists():
+                ydl_opts['cookiefile'] = str(self.cookie_file)
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, str(processed_url), download=True)
@@ -115,16 +112,9 @@ class YouTubeDownloader(BaseDownloader):
             raise DownloadError(f"Download error: {str(e)}")
 
     def _prepare_metadata(self, info: Dict, url: str) -> str:
-        def format_number(num):
-            if not num: return "0"
-            if num >= 1000000: return f"{num/1000000:.1f}M"
-            if num >= 1000: return f"{num/1000:.1f}K"
-            return str(num)
-
-        likes = format_number(info.get('like_count', 0))
-        views = format_number(info.get('view_count', 0))
+        views = info.get('view_count', 0)
         channel = info.get('uploader', 'Unknown')
-        return f"⚡YouTube | {views} | {likes}\n\n✨By {channel}\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
+        return f"⚡YouTube | {views} Views\n\n✨By {channel}\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
 
     def _progress_hook(self, d: Dict[str, Any]):
         if d['status'] == 'downloading':
