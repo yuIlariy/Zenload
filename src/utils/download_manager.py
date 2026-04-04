@@ -92,10 +92,28 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            # 🔥 FIX: Prevent Telegram API Crash from huge Facebook/Insta captions
-            if metadata and len(metadata) > 1000:
-                # Keep the first 950 characters and append an indicator
-                metadata = metadata[:950] + "...\n\n[Caption truncated]"
+            # 🔥 SMART CAPTION TRUNCATION (Max 3 lines of description)
+            if metadata:
+                parts = metadata.split('\n\n')
+                if len(parts) >= 3:
+                    # Separate the footer (By: Uploader & Bot handle) from the header (Title)
+                    footer = '\n\n'.join(parts[-2:])
+                    header = '\n\n'.join(parts[:-2])
+                    
+                    # Limit the title/description to max 3 lines
+                    header_lines = header.split('\n')
+                    if len(header_lines) > 3:
+                        header = '\n'.join(header_lines[:3]) + "..."
+                        
+                    # Absolute safety limit for Telegram (1024 chars total)
+                    if len(header) > 800:
+                        header = header[:797] + "..."
+                        
+                    metadata = f"{header}\n\n{footer}"
+                else:
+                    # Fallback if the format is different
+                    if len(metadata) > 900:
+                        metadata = metadata[:897] + "..."
 
             file_path_obj = Path(file_path)
             file_size = file_path_obj.stat().st_size
