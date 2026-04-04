@@ -23,6 +23,8 @@ class DownloadWorker:
         self.localization = localization
         self.settings_manager = settings_manager
         self.session = session
+        # ✅ FIX: Actually save the logger so the worker can use it
+        self.activity_logger = activity_logger 
 
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
@@ -78,10 +80,12 @@ class DownloadWorker:
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
+        sent_media = None # ✅ Track the message to forward to log channel
 
         try:
             self._current_message = status_message
             self._current_user_id = update.effective_user.id
+            user_id = update.effective_user.id # For logging
 
             downloader.set_progress_callback(self._download_progress)
 
@@ -91,7 +95,8 @@ class DownloadWorker:
 
             await self.update_message("⬆️ Preparing upload...")
 
-            file_size = Path(file_path).stat().st_size
+            file_path_obj = Path(file_path)
+            file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
             self._start_time = time.time()
@@ -99,26 +104,42 @@ class DownloadWorker:
             # 🔥 SMALL FILE
             if file_size < 50 * 1024 * 1024:
                 with open(file_path, 'rb') as file:
-                    await update.effective_message.reply_video(
-                        video=file,
-                        caption=metadata,
-                        supports_streaming=True,
-                        parse_mode="HTML"   # ✅ FIX
-                    )
+                    # ✅ Your requested logic for differentiating Audio/Video
+                    if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
+                        sent_media = await update.effective_message.reply_audio(
+                            audio=file, 
+                            caption=metadata, 
+                            parse_mode='HTML'
+                        )
+                    else:
+                        sent_media = await update.effective_message.reply_video(
+                            video=file, 
+                            caption=metadata, 
+                            parse_mode='HTML', 
+                            supports_streaming=True
+                        )
 
-            # 🔥 LARGE FILE
+            # 🔥 LARGE FILE (Pyrogram)
             else:
                 async with UPLOAD_LIMIT:
-                    await pyro_app.send_video(
+                    sent_media = await pyro_app.send_video(
                         chat_id=chat_id,
                         video=str(file_path),
                         caption=metadata,
                         supports_streaming=True,
                         progress=self.upload_progress_sync,
-                        parse_mode="HTML"   # ✅ FIX
+                        parse_mode="HTML"
                     )
 
             await self.update_message("✅ Done!")
+
+            # 🔥 SEND TO LOGS CHANNEL
+            if self.activity_logger and sent_media:
+                await self.activity_logger.log_media_transfer(
+                    message=sent_media,
+                    user_id=user_id,
+                    url=url
+                )
 
         except Exception as e:
             logger.error(f"Error: {e}", exc_info=True)
@@ -147,9 +168,12 @@ class DownloadManager:
         self.settings_manager = settings_manager
         self.session = None
         self._downloads_lock = asyncio.Lock()
+        # ✅ FIX: Actually save the logger to the manager
+        self.activity_logger = activity_logger 
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
-        worker = DownloadWorker(self.localization, self.settings_manager, self.session)
+        # ✅ FIX: Pass the logger down to the worker
+        worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
         await worker.process_download(downloader, url, update, status_message, format_id)
 
     async def cleanup(self):
