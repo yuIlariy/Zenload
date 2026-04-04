@@ -30,7 +30,7 @@ class YouTubeDownloader(BaseDownloader):
         return url
 
     async def get_formats(self, url: str) -> List[Dict]:
-        """Safely extract available formats"""
+        """Get formats (for UI only — download ignores IDs for reliability)"""
         try:
             self.update_progress('status_getting_info', 0)
             processed_url = self.preprocess_url(url)
@@ -56,7 +56,6 @@ class YouTubeDownloader(BaseDownloader):
                     seen = set()
 
                     for f in info['formats']:
-                        # Only valid video formats
                         if (
                             f.get('height')
                             and f.get('vcodec') != 'none'
@@ -85,7 +84,7 @@ class YouTubeDownloader(BaseDownloader):
             raise DownloadError(f"Extraction error: {str(e)}")
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """Download with strong fallback handling"""
+        """🔥 ALWAYS WORKING DOWNLOAD (auto-pick best format)"""
         try:
             self.update_progress('status_downloading', 0)
             processed_url = self.preprocess_url(url)
@@ -93,13 +92,8 @@ class YouTubeDownloader(BaseDownloader):
             download_dir = (Path(__file__).parent.parent.parent / "downloads").resolve()
             download_dir.mkdir(exist_ok=True)
 
-            # 🔥 FIXED FORMAT (fallback chain)
-            format_selector = (
-                f"{format_id}+bestaudio/"
-                f"{format_id}/"
-                f"bestvideo+bestaudio/"
-                f"best"
-            ) if format_id else "bestvideo+bestaudio/best"
+            # 🔥 ULTRA RELIABLE FORMAT SELECTION
+            format_selector = "bv*+ba/best"
 
             ydl_opts = {
                 'format': format_selector,
