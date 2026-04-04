@@ -53,8 +53,8 @@ class UserActivityLogger:
     def __init__(self, db, bot=None):
         self.db = db
         self.bot = bot
-        # REPLACE THIS with your actual log channel ID
-        self.LOG_CHANNEL = -1002345678901 
+        # Updated with your official log channel ID
+        self.LOG_CHANNEL = -1001925329161 
 
     async def log_new_user(self, user):
         """Send formatted 'New User' log to the admin channel"""
