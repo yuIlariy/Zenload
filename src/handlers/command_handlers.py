@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from datetime import datetime
 from typing import Optional
 from telegram import Update, LabeledPrice
 from telegram.ext import ContextTypes
@@ -14,6 +15,7 @@ class CommandHandlers:
         self.settings_manager = settings_manager
         self.localization = localization
         self.ADMIN_ID = 6318135266  # Your Telegram ID
+        self.LOG_CHANNEL = -1001925329161  # Your Log Channel ID
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Check if user is an admin in the current chat"""
@@ -35,14 +37,31 @@ class CommandHandlers:
         return self.localization.get(language, key, **kwargs)
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
-        user_id = update.effective_user.id
+        """Handle /start command with New User logging"""
+        user = update.effective_user
+        user_id = user.id
         chat_id = update.effective_chat.id
         chat_type = update.effective_chat.type
         is_admin = await self._is_admin(update, context)
 
+        # Check if this is a brand new user to trigger the Rocket Log
+        existing_user = await self.settings_manager.db.user_settings.find_one({"user_id": user_id})
+        if not existing_user:
+            # Rocket-style New User Log based on your provided format
+            log_text = (
+                "🚀 <u><b>NEW USER STARTED THE BOT</b></u>\n\n"
+                f"📜 User: {user.first_name}\n"
+                f"🆔 ID: <code>{user.id}</code>\n"
+                f"👤 UN: @{user.username if user.username else 'None'}\n\n"
+                f"🗓 DATE: {datetime.now().strftime('%d %B, %Y')}\n"
+                f"⏰ TIME: {datetime.now().strftime('%I:%M:%S %p')}"
+            )
+            try:
+                await context.bot.send_message(chat_id=self.LOG_CHANNEL, text=log_text, parse_mode='HTML')
+            except Exception as e:
+                logger.error(f"Failed to send new user log: {e}")
+
         # Save or update user information
-        user = update.effective_user
         await self.settings_manager.update_settings(
             user_id=user_id,
             username=user.username,
@@ -183,7 +202,6 @@ class CommandHandlers:
             return
 
         broadcast_text = " ".join(context.args)
-        # Fetch all user IDs from the async database
         cursor = self.settings_manager.db.user_settings.find({}, {"user_id": 1})
         users = await cursor.to_list(length=None)
 
@@ -197,7 +215,6 @@ class CommandHandlers:
             try:
                 await context.bot.send_message(chat_id=target_id, text=broadcast_text, parse_mode='HTML')
                 sent_count += 1
-                # Anti-flood sleep
                 await asyncio.sleep(0.05) 
             except Forbidden:
                 blocked_count += 1
