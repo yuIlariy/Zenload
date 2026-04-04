@@ -16,9 +16,9 @@ class MessageHandlers:
         self.activity_logger = activity_logger
         self._download_tasks = {}
 
-    def get_message(self, user_id: int, key: str, **kwargs) -> str:
-        """Get localized message"""
-        settings = self.settings_manager.get_settings(user_id)
+    async def get_message(self, user_id: int, key: str, **kwargs) -> str:
+        """Get localized message - NOW ASYNC"""
+        settings = await self.settings_manager.get_settings(user_id)
         language = settings.language
         return self.localization.get(language, key, **kwargs)
         
@@ -35,9 +35,9 @@ class MessageHandlers:
         message = update.message
         user_id = update.effective_user.id
         
-        # Update user information with each message
+        # Update user information with each message - NOW ASYNC
         user = update.effective_user
-        self.settings_manager.update_settings(
+        await self.settings_manager.update_settings(
             user_id=user_id,
             username=user.username,
             first_name=user.first_name,
@@ -69,13 +69,11 @@ class MessageHandlers:
             else:
                 # Try to send message without reply if we don't have admin rights
                 try:
-                    await message.reply_text(
-                        self.get_message(user_id, 'unsupported_url')
-                    )
+                    unsupported_msg = await self.get_message(user_id, 'unsupported_url')
+                    await message.reply_text(unsupported_msg)
                 except Exception:
-                    await update.effective_chat.send_message(
-                        self.get_message(user_id, 'unsupported_url')
-                    )
+                    unsupported_msg = await self.get_message(user_id, 'unsupported_url')
+                    await update.effective_chat.send_message(unsupported_msg)
             return
 
         # Handle private chat messages (we already returned for non-private above)
@@ -90,19 +88,24 @@ class MessageHandlers:
         if url:
             asyncio.create_task(self._process_url(url, update, context))
         else:
-            await message.reply_text(self.get_message(user_id, 'unsupported_url'))
+            unsupported_msg = await self.get_message(user_id, 'unsupported_url')
+            await message.reply_text(unsupported_msg)
             
     async def _handle_keyboard_shortcuts(self, message_text: str, user_id: int, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Handle keyboard shortcuts and return True if handled"""
         from .command_handlers import CommandHandlers
 
-        if message_text == self.get_message(user_id, 'btn_settings'):
+        btn_settings = await self.get_message(user_id, 'btn_settings')
+        btn_help = await self.get_message(user_id, 'btn_help')
+        btn_donate = await self.get_message(user_id, 'btn_donate')
+
+        if message_text == btn_settings:
             await CommandHandlers(self.keyboard_builder, self.settings_manager, self.localization).settings_command(update, context)
             return True
-        elif message_text == self.get_message(user_id, 'btn_help'):
+        elif message_text == btn_help:
             await CommandHandlers(self.keyboard_builder, self.settings_manager, self.localization).help_command(update, context)
             return True
-        elif message_text == self.get_message(user_id, 'btn_donate'):
+        elif message_text == btn_donate:
             await CommandHandlers(self.keyboard_builder, self.settings_manager, self.localization).donate_command(update, context)
             return True
 
@@ -117,26 +120,22 @@ class MessageHandlers:
         if not downloader:
             try:
                 # Try to reply first
-                await update.message.reply_text(
-                    self.get_message(user_id, 'unsupported_url')
-                )
+                unsupported_msg = await self.get_message(user_id, 'unsupported_url')
+                await update.message.reply_text(unsupported_msg)
             except Exception:
                 # If can't reply (no admin rights), send without reply
-                await update.effective_chat.send_message(
-                    self.get_message(user_id, 'unsupported_url')
-                )
+                unsupported_msg = await self.get_message(user_id, 'unsupported_url')
+                await update.effective_chat.send_message(unsupported_msg)
             return
 
         # Send initial status
         try:
-            status_message = await update.message.reply_text(
-                self.get_message(user_id, 'processing')
-            )
+            processing_msg = await self.get_message(user_id, 'processing')
+            status_message = await update.message.reply_text(processing_msg)
         except Exception:
             # If can't reply (no admin rights), try without reply
-            status_message = await update.effective_chat.send_message(
-                self.get_message(user_id, 'processing')
-            )
+            processing_msg = await self.get_message(user_id, 'processing')
+            status_message = await update.effective_chat.send_message(processing_msg)
 
         if not status_message:
             return  # Can't send messages at all
@@ -151,8 +150,8 @@ class MessageHandlers:
                     context.user_data.clear()
                 context.user_data['pending_url'] = url
 
-                # Get user settings
-                settings = self.settings_manager.get_settings(user_id)
+                # Get user settings - NOW ASYNC
+                settings = await self.settings_manager.get_settings(user_id)
                 
                 # If default quality is set and not 'ask', start download
                 if settings.default_quality != 'ask':
@@ -177,10 +176,13 @@ class MessageHandlers:
                     )
                     return
                 
-                # Show quality selection keyboard
+                # Show quality selection keyboard - NOW ASYNC
+                select_quality_msg = await self.get_message(user_id, 'select_quality')
+                format_kb = await self.keyboard_builder.build_format_selection_keyboard(user_id, formats)
+                
                 await status_message.edit_text(
-                    self.get_message(user_id, 'select_quality'),
-                    reply_markup=self.keyboard_builder.build_format_selection_keyboard(user_id, formats)
+                    select_quality_msg,
+                    reply_markup=format_kb
                 )
             else:
                 # If no formats available, download with default settings
@@ -205,13 +207,10 @@ class MessageHandlers:
 
         except Exception as e:
             try:
-                await update.message.reply_text(
-                    self.get_message(user_id, 'error_occurred')
-                )
+                error_msg = await self.get_message(user_id, 'error_occurred')
+                await update.message.reply_text(error_msg)
             except Exception:
-                await update.effective_chat.send_message(
-                    self.get_message(user_id, 'error_occurred')
-                )
+                error_msg = await self.get_message(user_id, 'error_occurred')
+                await update.effective_chat.send_message(error_msg)
             logger.error(f"Unexpected error processing {url}: {e}")
             await status_message.delete()
-
