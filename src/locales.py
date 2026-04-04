@@ -85,7 +85,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'invoice_description': "Поддержите разработку бота Stars",
         'price_label': "Поддержка (100 Stars)",
         'payment_support': (
-            "По вопросам оплаты обращайтесь к @binarybliss"
+            "По вопросам оплаты обращайтесь к @xspes"
         ),
         'payment_success': "Спасибо за вашу поддержку!",
         'group_welcome': (
@@ -189,11 +189,11 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Support bot development!\n\n"
             "Choose support amount in Stars"
         ),
-        'invoice_title': "Support Zenload Bot",
+        'invoice_title': "Support TikTok Bot",
         'invoice_description': "Support bot development with Stars",
         'price_label': "Support (100 Stars)",
         'payment_support': (
-            "For payment support, please contact @binarybliss"
+            "For payment support, please contact @xspes"
         ),
         'payment_success': "Thank you for your support!",
         'group_welcome': (
