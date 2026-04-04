@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 from telegram import Update, LabeledPrice
 from telegram.ext import ContextTypes
-from telegram.constants import ParseMode  # <-- Added this import
+from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +54,21 @@ class CommandHandlers:
                 message = self.get_message(user_id, 'group_welcome_admin', chat_id, is_admin)
             else:
                 message = self.get_message(user_id, 'group_welcome', chat_id, is_admin)
-            # Added ParseMode.HTML here
             await update.message.reply_text(message, parse_mode=ParseMode.HTML)
         else:
             message = self.get_message(user_id, 'welcome', chat_id, is_admin)
-            # Added ParseMode.HTML here
+            
+            # 1. Send the main welcome text with the inline Updates button
             await update.message.reply_text(
                 message,
-                reply_markup=self.keyboard_builder.build_main_keyboard(user_id),
+                reply_markup=self.keyboard_builder.build_welcome_keyboard(user_id),
                 parse_mode=ParseMode.HTML
+            )
+            
+            # 2. Send a quick pointer to activate the bottom settings menu
+            await update.message.reply_text(
+                "👇",
+                reply_markup=self.keyboard_builder.build_main_keyboard(user_id)
             )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
