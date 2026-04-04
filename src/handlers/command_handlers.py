@@ -37,29 +37,22 @@ class CommandHandlers:
         return self.localization.get(language, key, **kwargs)
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command with New User logging"""
+        """Handle /start command with centralized New User logging"""
         user = update.effective_user
         user_id = user.id
         chat_id = update.effective_chat.id
         chat_type = update.effective_chat.type
         is_admin = await self._is_admin(update, context)
 
-        # Check if this is a brand new user to trigger the Rocket Log
+        # Check if this is a brand new user in the database
         existing_user = await self.settings_manager.db.user_settings.find_one({"user_id": user_id})
+        
         if not existing_user:
-            # Rocket-style New User Log based on your provided format
-            log_text = (
-                "🚀 <u><b>NEW USER STARTED THE BOT</b></u>\n\n"
-                f"📜 User: {user.first_name}\n"
-                f"🆔 ID: <code>{user.id}</code>\n"
-                f"👤 UN: @{user.username if user.username else 'None'}\n\n"
-                f"🗓 DATE: {datetime.now().strftime('%d %B, %Y')}\n"
-                f"⏰ TIME: {datetime.now().strftime('%I:%M:%S %p')}"
-            )
-            try:
-                await context.bot.send_message(chat_id=self.LOG_CHANNEL, text=log_text, parse_mode='HTML')
-            except Exception as e:
-                logger.error(f"Failed to send new user log: {e}")
+            # Call the centralized logger defined in database.py
+            # This avoids duplicating the Rocket-style template here
+            from ..database import UserActivityLogger
+            activity_logger = UserActivityLogger(self.settings_manager.db, bot=context.bot)
+            await activity_logger.log_new_user(user)
 
         # Save or update user information
         await self.settings_manager.update_settings(
