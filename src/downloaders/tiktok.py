@@ -47,7 +47,7 @@ class TikTokDownloader(BaseDownloader):
         parts = ["🎵 <b>TikTok Video</b>\n"]
 
         if username:
-            parts.append(f"👤 <b>{username}</b>\n")
+            parts.append(f"👤 <b>{username}</b>\n\n")
 
         if views or likes:
             stats = []
@@ -55,9 +55,9 @@ class TikTokDownloader(BaseDownloader):
                 stats.append(f"👁 {views}")
             if likes:
                 stats.append(f"❤️ {likes}")
-            parts.append(" | ".join(stats) + "\n")
+            parts.append(" | ".join(stats) + "\n\n")
 
-        parts.append(f"\n🔗 <a href=\"{url}\">Watch on TikTok</a>\n")
+        parts.append(f"\n🔗 <a href=\"{url}\">Watch on TikTok</a>\n\n")
         parts.append("\n📥 <b>@Tik_TokDownloader_Bot</b>")
 
         return "".join(parts)
