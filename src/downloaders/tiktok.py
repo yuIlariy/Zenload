@@ -135,7 +135,7 @@ class TikTokDownloader(BaseDownloader):
                     username = info.get('uploader', '').replace('https://www.tiktok.com/@', '')
                     views = format_number(info.get('view_count', 0))
                     
-                    metadata = f"TikTok | {views} | {likes}\nby <a href=\"{url}\">{username}</a>"
+                    metadata = f"⚡TikTok | {views} | {likes}\n\n✨By <a href=\"{url}\">{username}</a>\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
                     return metadata, file
             
             raise DownloadError("Downloaded file not found")
