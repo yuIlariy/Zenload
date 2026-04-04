@@ -1,8 +1,6 @@
 import logging
 from pathlib import Path
 from telegram import Update, Message
-from telegram.error import BadRequest
-from ..downloaders import DownloadError
 import asyncio
 import aiohttp
 from typing import Dict, Optional
@@ -20,13 +18,11 @@ UPLOAD_LIMIT = asyncio.Semaphore(3)
 
 class DownloadWorker:
     auth_failure_tracker = defaultdict(int)
-    ADMIN_ID = 6318135266
 
     def __init__(self, localization, settings_manager, session: aiohttp.ClientSession, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
         self.session = session
-        self.activity_logger = activity_logger
 
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
@@ -34,12 +30,25 @@ class DownloadWorker:
         self._update_interval = 1.0
         self._start_time = None
 
-    # 🔥 Progress bar
+    # 🔥 CLEAN CAPTION (FIXES TIKTOK/YT FORMAT)
+    def clean_caption(self, text: str) -> str:
+        if not text:
+            return "📥 Downloaded"
+
+        text = text.strip()
+
+        # remove excessive newlines
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+
+        # limit length (telegram safe)
+        text = "\n".join(lines)[:900]
+
+        return text
+
     def build_progress_bar(self, percent: int, length: int = 12) -> str:
         filled = int(length * percent / 100)
         return "█" * filled + "░" * (length - filled)
 
-    # 🔥 Format progress
     def format_progress(self, prefix: str, current: int, total: int) -> str:
         percent = int((current / total) * 100) if total else 0
         bar = self.build_progress_bar(percent)
@@ -64,16 +73,22 @@ class DownloadWorker:
         except:
             pass
 
-    # 🔥 FIX: async upload progress
     async def upload_progress(self, current, total):
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
 
-    # 🔥 FIX: sync wrapper (CRITICAL)
+    # 🔥 FINAL FIX (THREAD SAFE)
     def upload_progress_sync(self, current, total):
         try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             loop = asyncio.get_event_loop()
-            loop.create_task(self.upload_progress(current, total))
+
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.upload_progress(current, total),
+                loop
+            )
         except:
             pass
 
@@ -83,7 +98,6 @@ class DownloadWorker:
         try:
             self._current_message = status_message
             self._current_user_id = update.effective_user.id
-            self._start_time = time.time()
 
             downloader.set_progress_callback(self._download_progress)
 
@@ -91,10 +105,16 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
+            # 🔥 CLEAN CAPTION
+            metadata = self.clean_caption(metadata)
+
             await self.update_message("⬆️ Preparing upload...")
 
             file_size = Path(file_path).stat().st_size
             chat_id = update.effective_chat.id
+
+            # reset timer for upload speed
+            self._start_time = time.time()
 
             # SMALL FILE
             if file_size < 50 * 1024 * 1024:
@@ -105,7 +125,7 @@ class DownloadWorker:
                         supports_streaming=True
                     )
 
-            # LARGE FILE
+            # LARGE FILE (FIXED)
             else:
                 async with UPLOAD_LIMIT:
                     await pyro_app.send_video(
@@ -113,7 +133,7 @@ class DownloadWorker:
                         video=str(file_path),
                         caption=metadata,
                         supports_streaming=True,
-                        progress=self.upload_progress_sync  # 🔥 FIXED
+                        progress=self.upload_progress_sync
                     )
 
             await self.update_message("✅ Done!")
@@ -143,14 +163,11 @@ class DownloadManager:
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
-        self.max_concurrent_downloads = max_concurrent_downloads
-        self.max_downloads_per_user = max_downloads_per_user
-        self.activity_logger = activity_logger
         self.session = None
         self._downloads_lock = asyncio.Lock()
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
-        worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
+        worker = DownloadWorker(self.localization, self.settings_manager, self.session)
         await worker.process_download(downloader, url, update, status_message, format_id)
 
     async def cleanup(self):
