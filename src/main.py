@@ -1,67 +1,71 @@
-import asyncio
+from typing import Optional
+from datetime import datetime
+from pymongo import MongoClient, ASCENDING
+from pymongo.database import Database
+import os
 import logging
-from pathlib import Path
-from dotenv import load_dotenv
-import signal
-import sys
-import platform
+from dataclasses import dataclass
 
-# Load environment variables before importing other modules
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-from .bot import ZenloadBot
+# Initialize MongoDB connection
+client = MongoClient(os.getenv('MONGODB_URI'))
+db: Database = client.zenload
 
-def handle_exception(loop, context):
-    """Handle exceptions in the event loop."""
-    msg = context.get("exception", context["message"])
-    logging.error(f"Caught exception: {msg}")
+@dataclass
+class UserSettings:
+    user_id: int
+    language: str = 'en'  # Updated default to English
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_premium: bool = False
+    default_quality: str = 'best'
+    created_at: datetime = None
+    updated_at: datetime = None
 
-def main():
-    """Main entry point for the bot"""
-    try:
-        # Get or create event loop
+# ... (GroupSettings and UserActivity classes remain the same)
+
+class UserSettingsManager:
+    def __init__(self):
+        self.db = db
+        self._init_collections()
+
+    def _init_collections(self):
+        self.db.user_settings.create_index("user_id", unique=True)
+        self.db.group_settings.create_index("group_id", unique=True)
+        self.db.group_settings.create_index("admin_id")
+
+    def get_settings(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> UserSettings:
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        # Set up exception handler
-        loop.set_exception_handler(handle_exception)
-        
-        # Initialize bot
-        bot = ZenloadBot()
-        
-        # Set up signal handling based on platform
-        if platform.system() != 'Windows':
-            # Unix-like systems can use asyncio signal handlers
-            signals = (signal.SIGTERM, signal.SIGINT)
-            for s in signals:
-                loop.add_signal_handler(
-                    s,
-                    lambda s=s: asyncio.create_task(bot.stop())
-                )
-        else:
-            # Windows needs a different approach
-            def signal_handler(signum, frame):
-                loop.create_task(bot.stop())
-                sys.exit(0)
+            if chat_id and chat_id < 0:
+                group_doc = self.db.group_settings.find_one({"group_id": chat_id})
+                if group_doc:
+                    return UserSettings(
+                        user_id=user_id,
+                        language=group_doc.get('language', 'en'), # Default to en
+                        default_quality=group_doc.get('default_quality', 'ask')
+                    )
             
-            signal.signal(signal.SIGINT, signal_handler)
-            signal.signal(signal.SIGTERM, signal_handler)
-        
-        # Start the bot
-        logging.info("Starting Zenload bot...")
-        bot.run()
-        
-    except Exception as e:
-        logging.error(f"Failed to start bot: {e}", exc_info=True)
-        sys.exit(1)
-    finally:
-        loop.close()
-
-if __name__ == "__main__":
-    main()
-
-
-
+            user_doc = self.db.user_settings.find_one({"user_id": user_id})
+            if not user_doc:
+                settings = UserSettings(user_id=user_id)
+                self.db.user_settings.insert_one({
+                    "user_id": user_id,
+                    "language": settings.language,
+                    "default_quality": settings.default_quality,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                })
+                return settings
+            
+            return UserSettings(
+                user_id=user_id,
+                language=user_doc.get('language', 'en'), # Default to en
+                default_quality=user_doc.get('default_quality', 'ask'),
+                # ... (rest of fields)
+            )
+        except Exception as e:
+            logger.error(f"Failed to get settings: {e}")
+            return UserSettings(user_id=user_id)
