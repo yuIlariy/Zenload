@@ -29,27 +29,17 @@ class YouTubeDownloader(BaseDownloader):
         return url
 
     async def get_formats(self, url: str) -> List[Dict]:
-        """
-        🔥 FINAL FIX:
-        Completely disable format extraction (this was causing crashes)
-        """
         return [
             {'id': 'auto', 'quality': 'Best', 'ext': 'mp4'}
         ]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """
-        🔥 ALWAYS WORKING DOWNLOAD
-        No format errors ever
-        """
         try:
-            self.update_progress('status_downloading', 0)
             processed_url = self.preprocess_url(url)
 
             download_dir = (Path(__file__).parent.parent.parent / "downloads").resolve()
             download_dir.mkdir(exist_ok=True)
 
-            # 🔥 ULTRA RELIABLE FORMAT
             format_selector = "bv*+ba/best"
 
             ydl_opts = {
@@ -90,18 +80,18 @@ class YouTubeDownloader(BaseDownloader):
             f"📥Downloaded via: @Tik_TokDownloader_Bot"
         )
 
+    # 🔥 FIXED PROGRESS HOOK (THREAD SAFE)
     def _progress_hook(self, d: Dict[str, Any]):
         if d['status'] == 'downloading':
             try:
-                loop = asyncio.get_event_loop()
-                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
 
-                if total > 0:
-                    progress = int((downloaded / total) * 70) + 20
-                    asyncio.run_coroutine_threadsafe(
-                        self.update_progress('status_downloading', progress),
-                        loop
-                    )
-            except:
+                if total:
+                    percent = int((downloaded / total) * 100)
+
+                    # 🔥 SAFE: run async function from thread
+                    asyncio.run(self.update_progress('status_downloading', percent))
+
+            except Exception as e:
                 pass
