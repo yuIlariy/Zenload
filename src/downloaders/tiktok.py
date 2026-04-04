@@ -96,7 +96,7 @@ class TikTokDownloader(BaseDownloader):
         )
         
         if file_path and file_path.exists():
-            metadata = f"TikTok\n<a href=\"{url}\">Ссылка</a>"
+            metadata = f"TikTok\n<a href=\"{url}\">Video Link</a>"
             return metadata, file_path
         
         # === Fallback to yt-dlp ===
