@@ -26,50 +26,11 @@ class DownloadWorker:
 
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
-        self._last_update_time = 0
-        self._update_interval = 2.0  # Increased to 2 seconds to prevent rate limits
-        self._start_time = None
-
-    def build_progress_bar(self, percent: int, length: int = 12) -> str:
-        filled = int(length * percent / 100)
-        return "█" * filled + "░" * (length - filled)
-
-    def format_progress(self, prefix: str, current: int, total: int) -> str:
-        percent = int((current / total) * 100) if total else 0
-        bar = self.build_progress_bar(percent)
-
-        elapsed = time.time() - self._start_time if self._start_time else 1
-        speed = current / elapsed if elapsed > 0 else 0
-        speed_mb = speed / (1024 * 1024)
-        remaining = (total - current) / speed if speed > 0 else 0
-
-        return (
-            f"{prefix}\n"
-            f"{bar} {percent}%\n"
-            f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(remaining)}s"
-        )
 
     async def update_message(self, text: str):
         try:
-            if time.time() - self._last_update_time < self._update_interval:
-                return
-            self._last_update_time = time.time()
             await self._current_message.edit_text(text)
         except:
-            pass
-
-    async def upload_progress(self, current, total, *args):
-        try:
-            # Print to VPS console roughly every 5MB
-            if current % (1024 * 1024 * 5) < 512 * 1024:  
-                logger.info(f"🚀 Pyrogram Uploading: {current/1024/1024:.1f}MB / {total/1024/1024:.1f}MB")
-                
-            text = self.format_progress("⬆️ Uploading (Pyrogram)...", current, total)
-            
-            # 🔥 CRITICAL FIX: "Fire and Forget" the progress update!
-            # If we await it directly, PTB deadlocks Pyrogram's 0.5MB chunking engine.
-            asyncio.create_task(self.update_message(text))
-        except Exception as e:
             pass
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
@@ -81,9 +42,7 @@ class DownloadWorker:
             self._current_user_id = update.effective_user.id
             user_id = update.effective_user.id 
 
-            downloader.set_progress_callback(self._download_progress)
-
-            await self.update_message("⬇️ Starting download...")
+            await self.update_message("⬇️ Downloading...")
 
             metadata, file_path = await downloader.download(url, format_id)
 
@@ -107,8 +66,6 @@ class DownloadWorker:
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
-            self._start_time = time.time()
-
             # 🔥 SMALL FILE (< 50MB) - PTB
             if file_size < 50 * 1024 * 1024:
                 await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
@@ -125,24 +82,25 @@ class DownloadWorker:
                             supports_streaming=True, read_timeout=120, write_timeout=120
                         )
 
-            # 🔥 LARGE FILE (> 50MB) - Pyrogram
+            # 🔥 LARGE FILE (> 50MB) - Pyrogram (NO PROGRESS BAR)
             else:
-                await self.update_message("⬆️ Preparing large upload...\n(Bypassing Telegram 50MB limit...)")
+                await self.update_message("⬆️ Uploading massive file...\n(Please wait, this will take a moment...)")
                 logger.info(f"Pyrogram starting upload for chat {chat_id}, file size: {file_size/1024/1024:.2f} MB")
                 
                 try:
                     logger.info("Pinging chat via Pyrogram...")
                     await pyro_app.send_chat_action(chat_id=chat_id, action=pyrogram.enums.ChatAction.UPLOAD_VIDEO)
-                    logger.info("Chat ping successful! Uploading...")
+                    logger.info("Chat ping successful! Uploading without progress bar...")
                 except Exception as ping_e:
                     logger.error(f"Pyrogram chat ping failed: {ping_e}")
                 
                 try:
+                    # Removed 'progress=...' completely!
                     if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
                         sent_media = await asyncio.wait_for(
                             pyro_app.send_audio(
                                 chat_id=chat_id, audio=str(file_path), caption=metadata,
-                                progress=self.upload_progress, parse_mode=PyroParseMode.HTML
+                                parse_mode=PyroParseMode.HTML
                             ),
                             timeout=600.0 
                         )
@@ -150,8 +108,7 @@ class DownloadWorker:
                         sent_media = await asyncio.wait_for(
                             pyro_app.send_video(
                                 chat_id=chat_id, video=str(file_path), caption=metadata,
-                                supports_streaming=True, progress=self.upload_progress, 
-                                parse_mode=PyroParseMode.HTML
+                                supports_streaming=True, parse_mode=PyroParseMode.HTML
                             ),
                             timeout=600.0 
                         )
@@ -182,12 +139,6 @@ class DownloadWorker:
                 await status_message.delete()
             except:
                 pass
-
-    async def _download_progress(self, status: str, progress: int):
-        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
-        # Same fix applied to download progress!
-        asyncio.create_task(self.update_message(text))
-
 
 class DownloadManager:
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
