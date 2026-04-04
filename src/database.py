@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -50,8 +50,58 @@ class UserActivity:
     processing_time: float = None
 
 class UserActivityLogger:
-    def __init__(self, db):
+    def __init__(self, db, bot=None):
         self.db = db
+        self.bot = bot
+        # REPLACE THIS with your actual log channel ID
+        self.LOG_CHANNEL = -1002345678901 
+
+    async def log_new_user(self, user):
+        """Send formatted 'New User' log to the admin channel"""
+        if not self.bot or not self.LOG_CHANNEL:
+            return
+
+        # Formatting matches your provided image exactly
+        text = (
+            "🚀 <u><b>NEW USER STARTED THE BOT</b></u>\n\n"
+            f"📜 User: {user.first_name}\n"
+            f"🆔 ID: <code>{user.id}</code>\n"
+            f"👤 UN: @{user.username if user.username else 'None'}\n\n"
+            f"🗓 DATE: {datetime.now().strftime('%d %B, %Y')}\n"
+            f"⏰ TIME: {datetime.now().strftime('%I:%M:%S %p')}"
+        )
+
+        try:
+            await self.bot.send_message(
+                chat_id=self.LOG_CHANNEL,
+                text=text,
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.error(f"Failed to send new user log to channel: {e}")
+
+    async def log_media_transfer(self, message, user_id: int, url: str):
+        """Forward media to log channel and provide the original link"""
+        if not self.bot or not self.LOG_CHANNEL or not message:
+            return
+
+        try:
+            # 1. Forward the actual video/audio message
+            await message.forward(chat_id=self.LOG_CHANNEL)
+            
+            # 2. Send the metadata log including the original URL
+            log_metadata = (
+                f"🔗 <b>Source Link:</b> {url}\n"
+                f"👤 <b>User ID:</b> <code>{user_id}</code>"
+            )
+            await self.bot.send_message(
+                chat_id=self.LOG_CHANNEL,
+                text=log_metadata,
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to forward media to log channel: {e}")
 
     async def setup_indexes(self):
         """Initialize MongoDB collection and indexes asynchronously"""
