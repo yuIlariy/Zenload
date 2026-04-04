@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 from telegram import Update, LabeledPrice
 from telegram.ext import ContextTypes
+from telegram.constants import ParseMode  # <-- Added this import
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,15 @@ class CommandHandlers:
                 message = self.get_message(user_id, 'group_welcome_admin', chat_id, is_admin)
             else:
                 message = self.get_message(user_id, 'group_welcome', chat_id, is_admin)
-            await update.message.reply_text(message)
+            # Added ParseMode.HTML here
+            await update.message.reply_text(message, parse_mode=ParseMode.HTML)
         else:
             message = self.get_message(user_id, 'welcome', chat_id, is_admin)
+            # Added ParseMode.HTML here
             await update.message.reply_text(
                 message,
-                reply_markup=self.keyboard_builder.build_main_keyboard(user_id)
+                reply_markup=self.keyboard_builder.build_main_keyboard(user_id),
+                parse_mode=ParseMode.HTML
             )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,4 +184,3 @@ class CommandHandlers:
         
         # Process URL using message handler
         await message_handler._process_url(url, update, context)
-
