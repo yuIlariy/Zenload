@@ -6,7 +6,7 @@ from .yandex import YandexMusicDownloader
 from .pinterest import PinterestDownloader
 from .youtube import YouTubeDownloader
 from .soundcloud import SoundcloudDownloader
-
+from .facebook import FacebookDownloader  # Add this import
 
 class DownloaderFactory:
     """Factory class to manage and create appropriate downloaders"""
@@ -17,7 +17,8 @@ class DownloaderFactory:
         YandexMusicDownloader,
         PinterestDownloader,
         YouTubeDownloader,
-        SoundcloudDownloader
+        SoundcloudDownloader,
+        FacebookDownloader  # Add this to the list
     ]
 
     @classmethod
@@ -28,6 +29,5 @@ class DownloaderFactory:
             if downloader.can_handle(url):
                 return downloader
         return None
-
 
 __all__ = ['DownloaderFactory', 'DownloadError']
