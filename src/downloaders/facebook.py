@@ -96,4 +96,4 @@ class FacebookDownloader(BaseDownloader):
         """Format metadata for the Telegram response"""
         title = info.get('title', 'Facebook Video')
         uploader = info.get('uploader', 'Unknown User')
-        return f"🎬 **{title}**\n\n👤 By: {uploader}\n📥 Downloaded via: @Tik_TokDownloader_Bot"
+        return f"🎬 {title}\n\n👤 By: {uploader}\n\n📥 Downloaded via: @Tik_TokDownloader_Bot"
