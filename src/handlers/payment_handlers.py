@@ -9,9 +9,9 @@ class PaymentHandlers:
         self.localization = localization
         self.settings_manager = settings_manager
 
-    def get_message(self, user_id: int, key: str, **kwargs) -> str:
-        """Get localized message"""
-        settings = self.settings_manager.get_settings(user_id)
+    async def get_message(self, user_id: int, key: str, **kwargs) -> str:
+        """Get localized message - NOW ASYNC"""
+        settings = await self.settings_manager.get_settings(user_id)
         return self.localization.get(settings.language, key, **kwargs)
 
     async def pre_checkout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -23,7 +23,6 @@ class PaymentHandlers:
         """Handle successful payments"""
         payment = update.message.successful_payment
         if payment.invoice_payload == "donate_stars":
-            await update.message.reply_text(
-                self.get_message(update.effective_user.id, 'payment_success')
-            )
-
+            # Await the localized success message
+            success_msg = await self.get_message(update.effective_user.id, 'payment_success')
+            await update.message.reply_text(success_msg)
