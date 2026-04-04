@@ -22,6 +22,16 @@ class KeyboardBuilder:
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+    def build_welcome_keyboard(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> InlineKeyboardMarkup:
+        """Build inline keyboard for the welcome message with URL links"""
+        keyboard = [
+            [InlineKeyboardButton(
+                self.get_message(user_id, 'btn_updates', chat_id, is_admin),
+                url="https://t.me/OtherBs"
+            )]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
     def build_settings_keyboard(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> InlineKeyboardMarkup:
         """Build settings menu keyboard based on context"""
         # For groups, add context to callback data
@@ -106,4 +116,3 @@ class KeyboardBuilder:
             callback_data=f"quality:best{context}"
         )])
         return InlineKeyboardMarkup(keyboard)
-
