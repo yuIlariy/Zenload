@@ -4,17 +4,19 @@ from typing import Dict, Any
 LOCALES: Dict[str, Dict[str, str]] = {
     'ru': {
         'welcome': (
-            "Zenload\n\n"
-            "Отправьте ссылку на видео или музыку с:\n"
-            "• Instagram\n"
-            "• TikTok\n"
-            "• Pinterest\n"
-            "• Yandex Music\n"
-            "• SoundCloud\n\n"
-            "Команды:\n"
+            "<a href='https://telegra.ph/file/ec17880d61180d3312d6a.jpg'>&#8203;</a>"
+            "<b>UFOload Downloader</b> 📥\n\n"
+            "Отправьте ссылку на видео или музыку для скачивания из:\n"
+            "📸 • Instagram\n"
+            "🎵 • TikTok\n"
+            "📌 • Pinterest\n"
+            "🎧 • Yandex Music\n"
+            "☁️ • SoundCloud\n\n"
+            "⚙️ <b>Команды:</b>\n"
             "/settings - Настройки\n"
             "/help - Помощь\n"
-            "/donate - Поддержать"
+            "/donate - Поддержать\n\n"
+            "🛸 <i>Powered by</i> <a href='https://t.me/xspes'>NAm</a>"
         ),
         'btn_settings': "Настройки",
         'btn_help': "Помощь",
@@ -26,6 +28,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_ask': "Спрашивать каждый раз",
         'btn_best': "Лучшее",
         'btn_donate': "Поддержать",
+        'btn_updates': "📢 Канал обновлений", # New button text added
         'help': (
             "Как использовать:\n\n"
             "1. Отправьте ссылку\n"
@@ -112,17 +115,19 @@ LOCALES: Dict[str, Dict[str, str]] = {
     },
     'en': {
         'welcome': (
-            "Zenload\n\n"
-            "Send video or music URL from:\n"
-            "• Instagram\n"
-            "• TikTok\n"
-            "• Pinterest\n"
-            "• Yandex Music\n"
-            "• SoundCloud\n\n"
-            "Commands:\n"
-            "/settings - Settings\n"
-            "/help - Help\n"
-            "/donate - Support"
+            "<a href='https://telegra.ph/file/ec17880d61180d3312d6a.jpg'>&#8203;</a>"
+            "<b>UFOload Downloader</b> 📥\n\n"
+            "Send a video or music link to download from:\n"
+            "📸 • Instagram\n"
+            "🎵 • TikTok\n"
+            "📌 • Pinterest\n"
+            "🎧 • Yandex Music\n"
+            "☁️ • SoundCloud\n\n"
+            "⚙️ <b>Commands:</b>\n"
+            "/settings - Adjust settings\n"
+            "/help - How to use\n"
+            "/donate - Support the bot\n\n"
+            "🛸 <i>Powered by</i> <a href='https://t.me/xspes'>NAm</a>"
         ),
         'btn_settings': "Settings",
         'btn_help': "Help",
@@ -134,6 +139,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_ask': "Ask",
         'btn_best': "Best",
         'btn_donate': "Support",
+        'btn_updates': "📢 Updates Channel", # New button text added
         'help': (
             "How to use:\n\n"
             "1. Send URL\n"
