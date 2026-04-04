@@ -30,21 +30,6 @@ class DownloadWorker:
         self._update_interval = 1.0
         self._start_time = None
 
-    # 🔥 CLEAN CAPTION (FIXES TIKTOK/YT FORMAT)
-    def clean_caption(self, text: str) -> str:
-        if not text:
-            return "📥 Downloaded"
-
-        text = text.strip()
-
-        # remove excessive newlines
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-
-        # limit length (telegram safe)
-        text = "\n".join(lines)[:900]
-
-        return text
-
     def build_progress_bar(self, percent: int, length: int = 12) -> str:
         filled = int(length * percent / 100)
         return "█" * filled + "░" * (length - filled)
@@ -77,7 +62,6 @@ class DownloadWorker:
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
 
-    # 🔥 FINAL FIX (THREAD SAFE)
     def upload_progress_sync(self, current, total):
         try:
             loop = asyncio.get_running_loop()
@@ -105,27 +89,24 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            # 🔥 CLEAN CAPTION
-            metadata = self.clean_caption(metadata)
-
             await self.update_message("⬆️ Preparing upload...")
 
             file_size = Path(file_path).stat().st_size
             chat_id = update.effective_chat.id
 
-            # reset timer for upload speed
             self._start_time = time.time()
 
-            # SMALL FILE
+            # 🔥 SMALL FILE
             if file_size < 50 * 1024 * 1024:
                 with open(file_path, 'rb') as file:
                     await update.effective_message.reply_video(
                         video=file,
                         caption=metadata,
-                        supports_streaming=True
+                        supports_streaming=True,
+                        parse_mode="HTML"   # ✅ FIX
                     )
 
-            # LARGE FILE (FIXED)
+            # 🔥 LARGE FILE
             else:
                 async with UPLOAD_LIMIT:
                     await pyro_app.send_video(
@@ -133,7 +114,8 @@ class DownloadWorker:
                         video=str(file_path),
                         caption=metadata,
                         supports_streaming=True,
-                        progress=self.upload_progress_sync
+                        progress=self.upload_progress_sync,
+                        parse_mode="HTML"   # ✅ FIX
                     )
 
             await self.update_message("✅ Done!")
