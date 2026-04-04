@@ -89,7 +89,7 @@ class InstagramDownloader(BaseDownloader):
         )
         
         if file_path and file_path.exists():
-            metadata = f"Instagram\n<a href=\"{url}\">Ссылка</a>"
+            metadata = f"Instagram\n<a href=\"{url}\">Video Link</a>"
             return metadata, file_path
         
         # === Fallback to yt-dlp ===
@@ -122,7 +122,7 @@ class InstagramDownloader(BaseDownloader):
             if not file_path.exists():
                  raise DownloadError("File downloaded but not found")
 
-            metadata = f"Instagram\n<a href=\"{url}\">Ссылка</a>"
+            metadata = f"Instagram\n<a href=\"{url}\">Video Link</a>"
             return metadata, file_path
             
         except Exception as e:
