@@ -123,43 +123,54 @@ class ZenloadBot:
         self.application.add_handler(InlineQueryHandler(self.inline_handlers.handle_inline_query))
 
     async def start(self):
-        """🔥 Proper unified startup"""
+        """🔥 START EVERYTHING IN ONE LOOP"""
         logger.info("🟢 Starting bot...")
 
-        # remove webhook
+        # Create an event to keep the loop running indefinitely
+        self.stop_event = asyncio.Event()
+
+        # Remove webhook
         try:
             await self.application.bot.delete_webhook(drop_pending_updates=True)
-        except:
+        except Exception:
             pass
 
-        # 🔥 start pyrogram (ONLY ONCE HERE)
+        # 🔥 Start Pyrogram INSIDE SAME LOOP
         await pyro_app.start()
         logger.info("🚀 Pyrogram started")
 
-        # 🔥 correct PTB v20+ flow
+        # 🔥 Start Telegram bot manually
         await self.application.initialize()
         await self.application.start()
+        await self.application.updater.start_polling(drop_pending_updates=True)
+        logger.info("🚀 Telegram bot started")
 
-        # 🔥 THIS replaces updater.start_polling + idle
-        await self.application.run_polling(drop_pending_updates=True)
+        # 🔥 KEEP RUNNING UNTIL STOP_EVENT IS SET
+        await self.stop_event.wait()
 
     async def stop(self):
         logger.info("Stopping...")
 
+        # Unblock the main loop if it's waiting
+        if hasattr(self, 'stop_event'):
+            self.stop_event.set()
+
         try:
             await pyro_app.stop()
-        except:
+        except Exception:
             pass
 
         try:
+            # Manually stop the updater and application
+            await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
-        except:
+        except Exception:
             pass
 
         try:
             await self.soundcloud_service.close()
-        except:
+        except Exception:
             pass
 
         if self.lock_fd:
@@ -168,7 +179,7 @@ class ZenloadBot:
                 os.close(self.lock_fd)
                 if self.lock_file.exists():
                     self.lock_file.unlink()
-            except:
+            except Exception:
                 pass
 
     def run(self):
@@ -176,3 +187,5 @@ class ZenloadBot:
             asyncio.run(self.start())
         except KeyboardInterrupt:
             logger.info("Stopped manually")
+            # Run the stop method to clean up gracefully
+            asyncio.run(self.stop())
