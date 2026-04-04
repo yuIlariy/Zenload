@@ -59,19 +59,33 @@ class DownloadWorker:
         except:
             pass
 
-    # ✅ FIX: Added *args to catch extra Pyrogram arguments and prevent crashes
-    async def upload_progress(self, current, total, *args):
+    async def upload_progress(self, current, total):
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
 
+    # ✅ RESTORED: Pyrogram needs this synchronous wrapper
+    def upload_progress_sync(self, current, total, *args):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.upload_progress(current, total),
+                loop
+            )
+        except:
+            pass
+
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
-        sent_media = None
+        sent_media = None 
 
         try:
             self._current_message = status_message
             self._current_user_id = update.effective_user.id
-            user_id = update.effective_user.id
+            user_id = update.effective_user.id 
 
             downloader.set_progress_callback(self._download_progress)
 
@@ -79,32 +93,57 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            await self.update_message("⬆️ Preparing upload...")
-
             file_path_obj = Path(file_path)
+            file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
             self._start_time = time.time()
 
-            # 🔥 FIX: ALWAYS use Pyrogram for uploads to get the live progress bar
-            async with UPLOAD_LIMIT:
-                if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
-                    sent_media = await pyro_app.send_audio(
-                        chat_id=chat_id,
-                        audio=str(file_path),
-                        caption=metadata,
-                        progress=self.upload_progress,
-                        parse_mode="HTML"
-                    )
-                else:
-                    sent_media = await pyro_app.send_video(
-                        chat_id=chat_id,
-                        video=str(file_path),
-                        caption=metadata,
-                        supports_streaming=True,
-                        progress=self.upload_progress,
-                        parse_mode="HTML"
-                    )
+            # 🔥 SMALL FILE (Restored: This worked perfectly for TikTok)
+            if file_size < 50 * 1024 * 1024:
+                # Tell the user it's uploading so they don't think it froze
+                await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
+                
+                with open(file_path, 'rb') as file:
+                    if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
+                        sent_media = await update.effective_message.reply_audio(
+                            audio=file, 
+                            caption=metadata, 
+                            parse_mode='HTML',
+                            read_timeout=120,  # Prevent PTB from timing out
+                            write_timeout=120
+                        )
+                    else:
+                        sent_media = await update.effective_message.reply_video(
+                            video=file, 
+                            caption=metadata, 
+                            parse_mode='HTML', 
+                            supports_streaming=True,
+                            read_timeout=120,
+                            write_timeout=120
+                        )
+
+            # 🔥 LARGE FILE (Pyrogram)
+            else:
+                await self.update_message("⬆️ Preparing large upload...")
+                async with UPLOAD_LIMIT:
+                    if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
+                        sent_media = await pyro_app.send_audio(
+                            chat_id=chat_id,
+                            audio=str(file_path),
+                            caption=metadata,
+                            progress=self.upload_progress_sync,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        sent_media = await pyro_app.send_video(
+                            chat_id=chat_id,
+                            video=str(file_path),
+                            caption=metadata,
+                            supports_streaming=True,
+                            progress=self.upload_progress_sync,
+                            parse_mode="HTML"
+                        )
 
             await self.update_message("✅ Done!")
 
