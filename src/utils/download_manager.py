@@ -8,6 +8,7 @@ import time
 from collections import defaultdict
 
 from src.utils.pyro_client import app as pyro_app
+from pyrogram.enums import ParseMode as PyroParseMode
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
@@ -59,23 +60,10 @@ class DownloadWorker:
         except:
             pass
 
-    async def upload_progress(self, current, total):
+    # 🔥 FIX: Just a clean, direct async function
+    async def upload_progress(self, current, total, *args):
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
-
-    def upload_progress_sync(self, current, total, *args):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-
-        try:
-            asyncio.run_coroutine_threadsafe(
-                self.upload_progress(current, total),
-                loop
-            )
-        except:
-            pass
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
@@ -96,22 +84,18 @@ class DownloadWorker:
             if metadata:
                 parts = metadata.split('\n\n')
                 if len(parts) >= 3:
-                    # Separate the footer (By: Uploader & Bot handle) from the header (Title)
                     footer = '\n\n'.join(parts[-2:])
                     header = '\n\n'.join(parts[:-2])
                     
-                    # Limit the title/description to max 3 lines
                     header_lines = header.split('\n')
                     if len(header_lines) > 3:
                         header = '\n'.join(header_lines[:3]) + "..."
                         
-                    # Absolute safety limit for Telegram (1024 chars total)
                     if len(header) > 800:
                         header = header[:797] + "..."
                         
                     metadata = f"{header}\n\n{footer}"
                 else:
-                    # Fallback if the format is different
                     if len(metadata) > 900:
                         metadata = metadata[:897] + "..."
 
@@ -121,7 +105,7 @@ class DownloadWorker:
 
             self._start_time = time.time()
 
-            # 🔥 SMALL FILE
+            # 🔥 SMALL FILE (< 50MB)
             if file_size < 50 * 1024 * 1024:
                 await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
                 
@@ -144,7 +128,7 @@ class DownloadWorker:
                             write_timeout=120
                         )
 
-            # 🔥 LARGE FILE
+            # 🔥 LARGE FILE (> 50MB) - Pyrogram
             else:
                 await self.update_message("⬆️ Preparing large upload...")
                 async with UPLOAD_LIMIT:
@@ -153,8 +137,8 @@ class DownloadWorker:
                             chat_id=chat_id,
                             audio=str(file_path),
                             caption=metadata,
-                            progress=self.upload_progress_sync,
-                            parse_mode="HTML"
+                            progress=self.upload_progress, # Direct async call
+                            parse_mode=PyroParseMode.HTML # Official Pyrogram ParseMode
                         )
                     else:
                         sent_media = await pyro_app.send_video(
@@ -162,8 +146,8 @@ class DownloadWorker:
                             video=str(file_path),
                             caption=metadata,
                             supports_streaming=True,
-                            progress=self.upload_progress_sync,
-                            parse_mode="HTML"
+                            progress=self.upload_progress, # Direct async call
+                            parse_mode=PyroParseMode.HTML # Official Pyrogram ParseMode
                         )
 
             await self.update_message("✅ Done!")
