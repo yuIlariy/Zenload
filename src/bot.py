@@ -123,26 +123,25 @@ class ZenloadBot:
         self.application.add_handler(InlineQueryHandler(self.inline_handlers.handle_inline_query))
 
     async def start(self):
-        """🔥 START EVERYTHING IN ONE LOOP"""
+        """🔥 Proper unified startup"""
         logger.info("🟢 Starting bot...")
 
-        # Remove webhook
+        # remove webhook
         try:
             await self.application.bot.delete_webhook(drop_pending_updates=True)
         except:
             pass
 
-        # 🔥 Start Pyrogram INSIDE SAME LOOP
+        # 🔥 start pyrogram (ONLY ONCE HERE)
         await pyro_app.start()
         logger.info("🚀 Pyrogram started")
 
-        # 🔥 Start Telegram bot properly
+        # 🔥 correct PTB v20+ flow
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling()
 
-        # 🔥 KEEP RUNNING
-        await self.application.updater.idle()
+        # 🔥 THIS replaces updater.start_polling + idle
+        await self.application.run_polling(drop_pending_updates=True)
 
     async def stop(self):
         logger.info("Stopping...")
