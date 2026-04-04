@@ -2,7 +2,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
 
-# 🔥 LOAD ENV FIRST
+# 🔥 Load env FIRST
 load_dotenv(Path(__file__).parent / '.env')
 
 from src.bot import ZenloadBot
@@ -14,14 +14,13 @@ def main():
 
     bot = ZenloadBot()
 
-    # 🔥 Get telegram's loop
+    # 🔥 Start Pyrogram SAFELY
     loop = asyncio.get_event_loop()
+    loop.run_until_complete(pyro_app.start())
 
-    # 🔥 Start Pyrogram in SAME loop
-    loop.create_task(pyro_app.start())
-    print("🚀 Pyrogram scheduled")
+    print("🚀 Pyrogram started")
 
-    # 🔥 Run telegram bot (it controls loop)
+    # 🔥 Start Telegram bot
     bot.run()
 
 
