@@ -1,17 +1,17 @@
 from typing import Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
-from pymongo import MongoClient, ASCENDING, DESCENDING
-from pymongo.database import Database
+from motor.motor_asyncio import AsyncIOMotorClient
+import pymongo
 import os
 import logging
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Initialize MongoDB connection
-client = MongoClient(os.getenv('MONGODB_URI'))
-db: Database = client.zenload
+# Initialize MongoDB connection asynchronously
+client = AsyncIOMotorClient(os.getenv('MONGODB_URI'))
+db = client.zenload
 
 @dataclass
 class UserSettings:
@@ -38,11 +38,11 @@ class GroupSettings:
 @dataclass
 class UserActivity:
     user_id: int
-    action_type: str  # download_start, download_complete, quality_select
+    action_type: str
     timestamp: datetime
     url: str
     platform: str
-    status: str = None  # success, failed
+    status: str = None
     error_type: str = None
     quality: str = None
     file_type: str = None
@@ -50,20 +50,17 @@ class UserActivity:
     processing_time: float = None
 
 class UserActivityLogger:
-    def __init__(self, db: Database):
+    def __init__(self):
         self.db = db
-        self._init_collection()
 
-    def _init_collection(self):
-        """Initialize MongoDB collection and indexes"""
-        # Create indexes for efficient querying
-        self.db.user_activity.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
-        self.db.user_activity.create_index([("platform", ASCENDING)])
-        self.db.user_activity.create_index([("status", ASCENDING)])
-        self.db.user_activity.create_index([("timestamp", DESCENDING)])
+    async def setup_indexes(self):
+        """Initialize MongoDB collection and indexes asynchronously"""
+        await self.db.user_activity.create_index([("user_id", pymongo.ASCENDING), ("timestamp", pymongo.DESCENDING)])
+        await self.db.user_activity.create_index([("platform", pymongo.ASCENDING)])
+        await self.db.user_activity.create_index([("status", pymongo.ASCENDING)])
+        await self.db.user_activity.create_index([("timestamp", pymongo.DESCENDING)])
 
-    def log_download_attempt(self, user_id: int, url: str, platform: str):
-        """Log when user attempts to download content"""
+    async def log_download_attempt(self, user_id: int, url: str, platform: str):
         activity = UserActivity(
             user_id=user_id,
             action_type="download_start",
@@ -71,13 +68,12 @@ class UserActivityLogger:
             url=url,
             platform=platform
         )
-        self.db.user_activity.insert_one(activity.__dict__)
+        await self.db.user_activity.insert_one(activity.__dict__)
         return activity
 
-    def log_download_complete(self, user_id: int, url: str, success: bool,
+    async def log_download_complete(self, user_id: int, url: str, success: bool,
                             file_type: str = None, file_size: int = None,
                             processing_time: float = None, error: str = None):
-        """Log when download completes (successfully or with error)"""
         activity = UserActivity(
             user_id=user_id,
             action_type="download_complete",
@@ -90,11 +86,10 @@ class UserActivityLogger:
             file_size=file_size,
             processing_time=processing_time
         )
-        self.db.user_activity.insert_one(activity.__dict__)
+        await self.db.user_activity.insert_one(activity.__dict__)
         return activity
 
-    def log_quality_selection(self, user_id: int, url: str, quality: str):
-        """Log when user selects quality"""
+    async def log_quality_selection(self, user_id: int, url: str, quality: str):
         activity = UserActivity(
             user_id=user_id,
             action_type="quality_select",
@@ -103,11 +98,10 @@ class UserActivityLogger:
             platform=self._extract_platform(url),
             quality=quality
         )
-        self.db.user_activity.insert_one(activity.__dict__)
+        await self.db.user_activity.insert_one(activity.__dict__)
         return activity
 
     def _extract_platform(self, url: str) -> str:
-        """Extract platform name from URL"""
         if "youtube.com" in url or "youtu.be" in url:
             return "youtube"
         elif "instagram.com" in url:
@@ -120,8 +114,7 @@ class UserActivityLogger:
             return "yandex"
         return "unknown"
 
-    def get_user_stats(self, user_id: int, days: int = 30) -> dict:
-        """Get statistics for a specific user"""
+    async def get_user_stats(self, user_id: int, days: int = 30) -> dict:
         start_date = datetime.utcnow() - timedelta(days=days)
         
         pipeline = [
@@ -139,7 +132,8 @@ class UserActivityLogger:
             }}
         ]
         
-        results = self.db.user_activity.aggregate(pipeline)
+        cursor = self.db.user_activity.aggregate(pipeline)
+        results = await cursor.to_list(length=None)
         
         stats = {
             "total_downloads": 0,
@@ -161,37 +155,27 @@ class UserActivityLogger:
                 stats["failed_downloads"] += count
                 stats["platforms"][platform]["failed"] = count
                 
-            if result["avg_processing_time"]:
+            if result.get("avg_processing_time"):
                 stats["avg_processing_time"] = result["avg_processing_time"]
         
         stats["total_downloads"] = stats["successful_downloads"] + stats["failed_downloads"]
-        
         return stats
+
 
 class UserSettingsManager:
     def __init__(self):
-        """Initialize settings manager with MongoDB connection"""
         self.db = db
-        self._init_collections()
 
-    def _init_collections(self):
-        """Initialize MongoDB collections and indexes"""
-        # Create indexes if they don't exist
-        self.db.user_settings.create_index("user_id", unique=True)
-        self.db.group_settings.create_index("group_id", unique=True)
-        self.db.group_settings.create_index("admin_id")
+    async def setup_indexes(self):
+        """Initialize MongoDB collections and indexes asynchronously"""
+        await self.db.user_settings.create_index("user_id", unique=True)
+        await self.db.group_settings.create_index("group_id", unique=True)
+        await self.db.group_settings.create_index("admin_id")
 
-    def get_settings(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> UserSettings:
-        """
-        Get settings based on context:
-        - If chat_id is None, return user's personal settings
-        - If chat_id is provided, return group settings if they exist, otherwise user's settings
-        """
+    async def get_settings(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> UserSettings:
         try:
-            # If this is a group chat
-            if chat_id and chat_id < 0:  # Telegram group IDs are negative
-                group_doc = self.db.group_settings.find_one({"group_id": chat_id})
-                
+            if chat_id and chat_id < 0:
+                group_doc = await self.db.group_settings.find_one({"group_id": chat_id})
                 if group_doc:
                     return UserSettings(
                         user_id=user_id,
@@ -199,13 +183,11 @@ class UserSettingsManager:
                         default_quality=group_doc.get('default_quality', 'ask')
                     )
             
-            # Get or create user settings
-            user_doc = self.db.user_settings.find_one({"user_id": user_id})
+            user_doc = await self.db.user_settings.find_one({"user_id": user_id})
 
             if not user_doc:
-                # Create default settings
                 settings = UserSettings(user_id=user_id)
-                self.db.user_settings.insert_one({
+                await self.db.user_settings.insert_one({
                     "user_id": user_id,
                     "language": settings.language,
                     "default_quality": settings.default_quality,
@@ -236,18 +218,15 @@ class UserSettingsManager:
             logger.error(f"Failed to get settings for user {user_id}: {e}")
             return UserSettings(user_id=user_id)
 
-    def update_settings(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> UserSettings:
-        """Update settings based on context"""
+    async def update_settings(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> UserSettings:
         try:
-            # If this is a group chat and user is admin
             if chat_id and chat_id < 0 and is_admin:
                 valid_fields = {'language', 'default_quality'}
                 update_fields = {k: v for k, v in kwargs.items() if k in valid_fields}
                 
                 if update_fields:
                     update_fields['updated_at'] = datetime.utcnow()
-                    
-                    self.db.group_settings.update_one(
+                    await self.db.group_settings.update_one(
                         {"group_id": chat_id},
                         {
                             "$set": update_fields,
@@ -259,17 +238,14 @@ class UserSettingsManager:
                         },
                         upsert=True
                     )
-                    
-                    return self.get_settings(user_id, chat_id, is_admin)
+                    return await self.get_settings(user_id, chat_id, is_admin)
             
-            # Update user settings
             valid_fields = {'language', 'default_quality', 'username', 'first_name', 'last_name', 'phone_number', 'is_premium'}
             update_fields = {k: v for k, v in kwargs.items() if k in valid_fields}
             
             if update_fields:
                 update_fields['updated_at'] = datetime.utcnow()
-                
-                self.db.user_settings.update_one(
+                await self.db.user_settings.update_one(
                     {"user_id": user_id},
                     {
                         "$set": update_fields,
@@ -280,17 +256,15 @@ class UserSettingsManager:
                     },
                     upsert=True
                 )
-            
-            return self.get_settings(user_id)
+            return await self.get_settings(user_id)
 
         except Exception as e:
             logger.error(f"Failed to update settings for user {user_id}: {e}")
-            return self.get_settings(user_id)
+            return await self.get_settings(user_id)
 
-    def get_group_admin(self, group_id: int) -> Optional[int]:
-        """Get the admin ID for a group if settings exist"""
+    async def get_group_admin(self, group_id: int) -> Optional[int]:
         try:
-            group_doc = self.db.group_settings.find_one({"group_id": group_id})
+            group_doc = await self.db.group_settings.find_one({"group_id": group_id})
             return group_doc['admin_id'] if group_doc else None
         except Exception as e:
             logger.error(f"Failed to get admin for group {group_id}: {e}")
