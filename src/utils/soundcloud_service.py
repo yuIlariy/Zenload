@@ -9,7 +9,6 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 # Cloudflare Worker URL for SoundCloud API proxy
-# This bypasses geo-blocking by routing requests through Cloudflare's network
 SOUNDCLOUD_WORKER_URL = os.getenv(
     "SOUNDCLOUD_WORKER_URL",
     "https://soundcloud-proxy.roninreilly.workers.dev"
@@ -31,10 +30,11 @@ class SoundcloudService:
         return cls._instance
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
+        """Get or create aiohttp session with optimized timeouts."""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=20)
+                timeout=aiohttp.ClientTimeout(total=20, connect=10),
+                headers={'User-Agent': 'ZenloadBot/1.0'}
             )
         return self._session
 
@@ -44,9 +44,11 @@ class SoundcloudService:
         return self._session
 
     async def _worker_request(self, endpoint: str, params: Dict[str, str]) -> Optional[Dict]:
-        """Make request to Cloudflare Worker."""
+        """Make request to Cloudflare Worker - FULLY ASYNC."""
         session = await self._get_session()
-        url = f"{SOUNDCLOUD_WORKER_URL}{endpoint}?{urlencode(params)}"
+        # Clean the endpoint and build the final URL
+        clean_endpoint = endpoint if endpoint.startswith('/') else f"/{endpoint}"
+        url = f"{SOUNDCLOUD_WORKER_URL.rstrip('/')}{clean_endpoint}?{urlencode(params)}"
         
         try:
             async with session.get(url) as resp:
@@ -54,13 +56,13 @@ class SoundcloudService:
                     return await resp.json()
                 else:
                     text = await resp.text()
-                    logger.error(f"Worker error {resp.status}: {text[:200]}")
+                    logger.error(f"SoundCloud Worker error {resp.status}: {text[:200]}")
                     return None
         except asyncio.TimeoutError:
-            logger.error(f"Worker request timeout: {endpoint}")
+            logger.error(f"SoundCloud Worker request timeout: {endpoint}")
             return None
         except Exception as e:
-            logger.error(f"Worker request error: {e}")
+            logger.error(f"SoundCloud Worker request error: {e}")
             return None
 
     def _normalize_track(self, track: Dict[str, Any]) -> Dict[str, Any]:
@@ -68,14 +70,13 @@ class SoundcloudService:
         user = track.get("user") or {}
         media = track.get("media") or {}
         
-        # Find progressive stream URL from transcodings
+        # Stream URL logic from transcodings
         stream_url = None
         transcodings = media.get("transcodings") or []
         for t in transcodings:
             fmt = t.get("format") or {}
             if fmt.get("protocol") == "progressive":
-                # This is the transcoding URL, not the final stream URL
-                # We'll need to call /stream to get the actual URL
+                # Progressive is preferred for direct downloads
                 break
         
         return {
@@ -83,7 +84,7 @@ class SoundcloudService:
             "title": track.get("title") or "SoundCloud Track",
             "kind": "track",
             "permalink_url": track.get("permalink_url"),
-            "duration": track.get("duration", 0),  # already in ms
+            "duration": track.get("duration", 0),
             "full_duration": track.get("duration", 0),
             "artwork_url": track.get("artwork_url"),
             "playback_count": track.get("playback_count"),
@@ -96,7 +97,7 @@ class SoundcloudService:
         }
 
     async def search_tracks(self, query: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Search tracks using Cloudflare Worker."""
+        """Search tracks using Cloudflare Worker - ASYNC."""
         if not query:
             return []
 
@@ -105,15 +106,12 @@ class SoundcloudService:
         if not data or "tracks" not in data:
             return []
         
-        tracks = []
-        for track in data["tracks"]:
-            tracks.append(self._normalize_track(track))
-        
+        tracks = [self._normalize_track(track) for track in data["tracks"]]
         logger.info(f"SoundCloud search '{query}' -> {len(tracks)} tracks")
         return tracks
 
     async def resolve_track(self, url: str) -> Optional[Dict[str, Any]]:
-        """Resolve a SoundCloud URL into track metadata."""
+        """Resolve a SoundCloud URL into track metadata - ASYNC."""
         data = await self._worker_request("/resolve", {"url": url})
         
         if not data or "track" not in data:
@@ -123,32 +121,27 @@ class SoundcloudService:
 
     async def get_stream_url(self, track: Dict[str, Any]) -> Optional[str]:
         """
-        Get direct stream URL for a track.
-        Uses the Worker's /stream endpoint which returns the actual MP3 URL.
+        Get direct stream URL for a track via Worker /stream endpoint - ASYNC.
         """
-        # Check if we already have a cached stream URL
         if track.get("_stream_url"):
             return track["_stream_url"]
         
-        # Get track URL
         track_url = track.get("permalink_url")
         if not track_url:
             return None
         
-        # Call worker to get stream URL
         data = await self._worker_request("/stream", {"url": track_url})
-        
-        if not data or "url" not in data:
-            return None
-        
-        return data["url"]
+        return data.get("url") if data else None
 
     async def close(self):
-        """Close underlying sessions."""
-        try:
-            if self._session and not self._session.closed:
-                await asyncio.wait_for(self._session.close(), timeout=3)
-        except Exception as e:
-            logger.warning(f"Error closing SoundCloud session: {e}")
-        finally:
-            self._session = None
+        """Close underlying sessions - ASYNC."""
+        if self._session and not self._session.closed:
+            try:
+                await self._session.close()
+            except Exception as e:
+                logger.warning(f"Error closing SoundCloud session: {e}")
+            finally:
+                self._session = None
+
+# Global instance for easy access
+soundcloud = SoundcloudService.get_instance()
