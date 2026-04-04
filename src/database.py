@@ -57,14 +57,14 @@ class UserActivityLogger:
         self.LOG_CHANNEL = -1001925329161 
 
     async def log_new_user(self, user):
-        """Send formatted 'New User' log to the admin channel"""
+        """Send formatted 'New User' log with a clickable mention"""
         if not self.bot or not self.LOG_CHANNEL:
             return
 
-        # Centralized template matching your provided photo exactly
+        # Formatting with clickable mention in 'User:' field
         text = (
             "🚀 <u><b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ</b></u>\n\n"
-            f"📜 User: {user.first_name}\n"
+            f"📜 User: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
             f"🆔 ID: <code>{user.id}</code>\n"
             f"👤 UN: @{user.username if user.username else 'None'}\n\n"
             f"🗓 DATE: {datetime.now().strftime('%d %B, %Y')}\n"
@@ -79,6 +79,7 @@ class UserActivityLogger:
             )
         except Exception as e:
             logger.error(f"Failed to send new user log to channel: {e}")
+            
 
     async def log_media_transfer(self, message, user_id: int, url: str):
         """Forward media to log channel and provide the original link"""
