@@ -26,9 +26,9 @@ class CallbackHandlers:
                 return False
         return True  # In private chats, user is always "admin"
 
-    def get_message(self, user_id: int, key: str, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> str:
-        """Get localized message"""
-        settings = self.settings_manager.get_settings(user_id, chat_id, is_admin)
+    async def get_message(self, user_id: int, key: str, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> str:
+        """Get localized message - NOW ASYNC"""
+        settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
         language = settings.language
         return self.localization.get(language, key, **kwargs)
 
@@ -59,33 +59,30 @@ class CallbackHandlers:
                 await self._handle_quality_setting_callback(query, user_id, value, chat_id, is_admin)
                 
         except Exception as e:
-            await query.edit_message_text(
-                self.get_message(user_id, 'error_occurred')
-            )
+            error_msg = await self.get_message(user_id, 'error_occurred')
+            await query.edit_message_text(error_msg)
             logger.error(f"Error in callback handling: {e}")
 
     async def _handle_quality_callback(self, query, context, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
         """Handle quality selection for download"""
         url = context.user_data.get('pending_url')
         if not url:
-            await query.edit_message_text(
-                self.get_message(user_id, 'session_expired', chat_id, is_admin)
-            )
+            expired_msg = await self.get_message(user_id, 'session_expired', chat_id, is_admin)
+            await query.edit_message_text(expired_msg)
             return
         
         # Clear stored URL
         context.user_data.clear()
-        # Log quality selection if logger is available
+        
+        # Log quality selection if logger is available - NOW ASYNC
         if self.activity_logger:
-            self.activity_logger.log_quality_selection(user_id, url, quality)
+            await self.activity_logger.log_quality_selection(user_id, url, quality)
 
         # Get downloader
         downloader = DownloaderFactory.get_downloader(url)
         if not downloader:
-            await query.edit_message_text(
-                self.get_message(user_id, 'invalid_url', chat_id, is_admin)
-            )
-            return
+            invalid_msg = await self.get_message(user_id, 'invalid_url', chat_id, is_admin)
+            await query.edit_message_text(invalid_msg)
             return
         
         # Create fake update object for download manager
@@ -112,74 +109,74 @@ class CallbackHandlers:
         """Handle settings menu navigation"""
         # For group settings, verify admin status
         if chat_id and chat_id < 0 and not is_admin:
-            await query.edit_message_text(
-                self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            )
+            admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
+            await query.edit_message_text(admin_msg)
             return
 
         if setting == 'language':
             # Show language selection
-            await query.edit_message_text(
-                self.get_message(user_id, 'select_language', chat_id, is_admin),
-                reply_markup=self.keyboard_builder.build_language_keyboard(user_id, chat_id, is_admin)
-            )
+            select_lang_msg = await self.get_message(user_id, 'select_language', chat_id, is_admin)
+            lang_kb = await self.keyboard_builder.build_language_keyboard(user_id, chat_id, is_admin)
+            await query.edit_message_text(select_lang_msg, reply_markup=lang_kb)
             
         elif setting == 'quality':
             # Show quality selection
-            await query.edit_message_text(
-                self.get_message(user_id, 'select_default_quality', chat_id, is_admin),
-                reply_markup=self.keyboard_builder.build_quality_keyboard(user_id, chat_id, is_admin)
-            )
+            select_qual_msg = await self.get_message(user_id, 'select_default_quality', chat_id, is_admin)
+            qual_kb = await self.keyboard_builder.build_quality_keyboard(user_id, chat_id, is_admin)
+            await query.edit_message_text(select_qual_msg, reply_markup=qual_kb)
             
         elif setting == 'back':
             await self._show_settings_menu(query, user_id, chat_id, is_admin)
 
     async def _show_settings_menu(self, query, user_id: int, chat_id: Optional[int], is_admin: bool):
         """Show settings menu with current settings"""
-        settings = self.settings_manager.get_settings(user_id, chat_id, is_admin)
+        settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
+        
+        ask_msg = await self.get_message(user_id, 'ask_every_time', chat_id, is_admin)
+        best_msg = await self.get_message(user_id, 'best_available', chat_id, is_admin)
+        
         quality_display = {
-            'ask': self.get_message(user_id, 'ask_every_time', chat_id, is_admin),
-            'best': self.get_message(user_id, 'best_available', chat_id, is_admin)
+            'ask': ask_msg,
+            'best': best_msg
         }.get(settings.default_quality, settings.default_quality)
         
-        message = self.get_message(
+        message_key = 'group_settings_menu' if chat_id and chat_id < 0 else 'settings_menu'
+        message = await self.get_message(
             user_id,
-            'group_settings_menu' if chat_id and chat_id < 0 else 'settings_menu',
+            message_key,
             chat_id,
             is_admin,
             language=settings.language.upper(),
             quality=quality_display
         )
         
-        await query.edit_message_text(
-            message,
-            reply_markup=self.keyboard_builder.build_settings_keyboard(user_id, chat_id, is_admin)
-        )
+        settings_kb = await self.keyboard_builder.build_settings_keyboard(user_id, chat_id, is_admin)
+        await query.edit_message_text(message, reply_markup=settings_kb)
 
     async def _handle_language_callback(self, update, query, user_id: int, language: str, chat_id: Optional[int], is_admin: bool):
         """Handle language setting change"""
         if chat_id and chat_id < 0 and not is_admin:
-            await query.edit_message_text(
-                self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            )
+            admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
+            await query.edit_message_text(admin_msg)
             return
 
         # Get current settings
-        current_settings = self.settings_manager.get_settings(user_id, chat_id, is_admin)
+        current_settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
         if current_settings.language == language:
             # Language hasn't changed, show feedback message
-            await query.edit_message_text(
-                self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
-            )
+            unchanged_msg = await self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
+            await query.edit_message_text(unchanged_msg)
             return
 
-        self.settings_manager.update_settings(user_id, chat_id=chat_id, is_admin=is_admin, language=language)
+        await self.settings_manager.update_settings(user_id, chat_id=chat_id, is_admin=is_admin, language=language)
         
         # In private chats, update the main keyboard
         if not chat_id or chat_id > 0:
+            welcome_msg = await self.get_message(user_id, 'welcome', chat_id, is_admin)
+            main_kb = await self.keyboard_builder.build_main_keyboard(user_id)
             await update.effective_message.reply_text(
-                self.get_message(user_id, 'welcome', chat_id, is_admin),
-                reply_markup=self.keyboard_builder.build_main_keyboard(user_id)
+                welcome_msg,
+                reply_markup=main_kb
             )
         
         await self._show_settings_menu(query, user_id, chat_id, is_admin)
@@ -187,23 +184,17 @@ class CallbackHandlers:
     async def _handle_quality_setting_callback(self, query, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
         """Handle quality setting change"""
         if chat_id and chat_id < 0 and not is_admin:
-            await query.edit_message_text(
-                self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            )
+            admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
+            await query.edit_message_text(admin_msg)
             return
 
         # Get current settings
-        current_settings = self.settings_manager.get_settings(user_id, chat_id, is_admin)
+        current_settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
         if current_settings.default_quality == quality:
             # Quality hasn't changed, show feedback message
-            await query.edit_message_text(
-                self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
-            )
+            unchanged_msg = await self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
+            await query.edit_message_text(unchanged_msg)
             return
 
-        self.settings_manager.update_settings(user_id, chat_id=chat_id, is_admin=is_admin, default_quality=quality)
+        await self.settings_manager.update_settings(user_id, chat_id=chat_id, is_admin=is_admin, default_quality=quality)
         await self._show_settings_menu(query, user_id, chat_id, is_admin)
-
-
-
-
