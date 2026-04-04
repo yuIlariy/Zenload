@@ -48,12 +48,16 @@ YTDLP_OPTIONS = {
         'no_check_certificate': True
     },
     'youtube': {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        # FIX: Removed the restrictive 'bestvideo[ext=mp4]...' string
+        # Using 'best' here prevents the "Requested format is not available" crash
+        'format': 'bestvideo+bestaudio/best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'ignoreerrors': False,
-        'quiet': True
+        'quiet': True,
+        # Ensure cookies are globally applied to YouTube
+        'cookiefile': str(COOKIES_DIR / 'youtube.txt')
     },
     'yandex_music': {
         'format': 'bestaudio/best',
@@ -65,7 +69,7 @@ YTDLP_OPTIONS = {
     }
 }
 
-# Logging Configuration
+# Logging Configuration (remains the same)
 LOGGING_CONFIG = {
     'version': 1,
     'disable_existing_loggers': True,
@@ -105,22 +109,10 @@ LOGGING_CONFIG = {
             'level': 'INFO',
             'propagate': False
         },
-        'telegram': {
-            'level': 'WARNING',
-            'propagate': False
-        },
-        'httpx': {
-            'level': 'WARNING',
-            'propagate': False
-        },
-        'httpcore': {
-            'level': 'WARNING',
-            'propagate': False
-        },
-        'aiohttp': {
-            'level': 'WARNING',
-            'propagate': False
-        }
+        'telegram': {'level': 'WARNING', 'propagate': False},
+        'httpx': {'level': 'WARNING', 'propagate': False},
+        'httpcore': {'level': 'WARNING', 'propagate': False},
+        'aiohttp': {'level': 'WARNING', 'propagate': False}
     },
     'root': {
         'level': 'WARNING',
