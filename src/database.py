@@ -50,7 +50,7 @@ class UserActivity:
     processing_time: float = None
 
 class UserActivityLogger:
-    def __init__(self):
+    def __init__(self, db):
         self.db = db
 
     async def setup_indexes(self):
