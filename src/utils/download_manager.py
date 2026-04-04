@@ -9,15 +9,12 @@ from typing import Dict, Optional
 import time
 from collections import defaultdict
 
-# 🔥 Pyrogram
 from src.utils.pyro_client import app as pyro_app
 
-# Configure logging
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# 🔥 Parallel uploads
 UPLOAD_LIMIT = asyncio.Semaphore(3)
 
 
@@ -30,82 +27,71 @@ class DownloadWorker:
         self.settings_manager = settings_manager
         self.session = session
         self.activity_logger = activity_logger
-        self._status_queue = asyncio.Queue()
-        self._stop_event = asyncio.Event()
+
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
-        self._last_status: Optional[str] = None
-        self._last_progress: Optional[int] = None
-        self._status_task: Optional[asyncio.Task] = None
+
         self._last_update_time = 0
-        self._update_interval = 0.5
+        self._update_interval = 1.0
 
-    async def get_message(self, user_id: int, key: str, **kwargs) -> str:
-        settings = await self.settings_manager.get_settings(user_id)
-        return self.localization.get(settings.language, key, **kwargs)
+        self._start_time = None
 
-    async def update_status(self, message: Message, user_id: int, status_key: str, progress: int):
+    # 🔥 Progress bar
+    def build_progress_bar(self, percent: int, length: int = 12) -> str:
+        filled = int(length * percent / 100)
+        return "█" * filled + "░" * (length - filled)
+
+    # 🔥 Speed + ETA
+    def format_progress(self, prefix: str, current: int, total: int) -> str:
+        percent = int((current / total) * 100) if total else 0
+        bar = self.build_progress_bar(percent)
+
+        elapsed = time.time() - self._start_time if self._start_time else 1
+        speed = current / elapsed if elapsed > 0 else 0
+        speed_mb = speed / (1024 * 1024)
+
+        remaining = (total - current) / speed if speed > 0 else 0
+
+        return (
+            f"{prefix}\n"
+            f"{bar} {percent}%\n"
+            f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(remaining)}s"
+        )
+
+    async def update_message(self, text: str):
         try:
-            current_time = time.time()
-            if current_time - self._last_update_time < self._update_interval:
+            if time.time() - self._last_update_time < self._update_interval:
                 return
-
-            new_text = await self.get_message(user_id, status_key, progress=progress)
-
-            if new_text == self._last_status and progress == self._last_progress:
-                return
-
-            await message.edit_text(new_text)
-            self._last_status = new_text
-            self._last_progress = progress
-            self._last_update_time = current_time
-
-        except Exception:
+            await self._current_message.edit_text(text)
+            self._last_update_time = time.time()
+        except:
             pass
 
-    async def _process_status_updates(self):
-        try:
-            while not self._stop_event.is_set():
-                try:
-                    status, progress = await asyncio.wait_for(self._status_queue.get(), timeout=0.1)
-                    if status == "STOP":
-                        break
-
-                    if self._current_message:
-                        await self.update_status(self._current_message, self._current_user_id, status, progress)
-                        self._status_queue.task_done()
-
-                except asyncio.TimeoutError:
-                    continue
-        except asyncio.CancelledError:
-            pass
-
-    async def progress_callback(self, status: str, progress: int):
-        await self._status_queue.put((status, progress))
+    async def upload_progress(self, current, total):
+        text = self.format_progress("⬆️ Uploading...", current, total)
+        await self.update_message(text)
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         user_id = update.effective_user.id
         file_path = None
-        platform = downloader.__class__.__name__.lower().replace('downloader', '')
 
         try:
             self._current_message = status_message
             self._current_user_id = user_id
-            self._stop_event.clear()
-            self._status_task = asyncio.create_task(self._process_status_updates())
+            self._start_time = time.time()
 
-            downloader.set_progress_callback(self.progress_callback)
+            downloader.set_progress_callback(self._download_progress)
 
-            await self.update_status(status_message, user_id, 'status_getting_info', 0)
+            await self.update_message("⬇️ Starting download...")
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            await self.update_status(status_message, user_id, 'status_sending', 0)
+            await self.update_message("⬆️ Preparing upload...")
 
             file_size = Path(file_path).stat().st_size
             chat_id = update.effective_chat.id
 
-            # 🔥 SMALL FILE
+            # SMALL FILE → Bot API
             if file_size < 50 * 1024 * 1024:
                 with open(file_path, 'rb') as file:
                     if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav', '.ogg']:
@@ -113,7 +99,7 @@ class DownloadWorker:
                     else:
                         await update.effective_message.reply_video(video=file, caption=metadata, supports_streaming=True)
 
-            # 🚀 LARGE FILE (Pyrogram)
+            # LARGE FILE → Pyrogram
             else:
                 async with UPLOAD_LIMIT:
                     if file_path.suffix.lower() in ['.mp3', '.m4a', '.wav', '.ogg']:
@@ -121,7 +107,7 @@ class DownloadWorker:
                             chat_id=chat_id,
                             audio=str(file_path),
                             caption=metadata,
-                            progress=lambda c, t: None
+                            progress=self.upload_progress
                         )
                     else:
                         await pyro_app.send_video(
@@ -129,31 +115,30 @@ class DownloadWorker:
                             video=str(file_path),
                             caption=metadata,
                             supports_streaming=True,
-                            progress=lambda c, t: None
+                            progress=self.upload_progress
                         )
 
-            await self.update_status(status_message, user_id, 'status_sending', 100)
+            await self.update_message("✅ Done!")
 
         except Exception as e:
             logger.error(f"Error: {e}", exc_info=True)
             await update.effective_message.reply_text("❌ Download failed.")
 
         finally:
-            self._stop_event.set()
-
-            if self._status_task:
-                self._status_task.cancel()
-
             if file_path:
                 try:
                     Path(file_path).unlink()
-                except Exception:
+                except:
                     pass
 
             try:
                 await status_message.delete()
-            except Exception:
+            except:
                 pass
+
+    async def _download_progress(self, status: str, progress: int):
+        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
+        await self.update_message(text)
 
 
 class DownloadManager:
