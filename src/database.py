@@ -63,7 +63,7 @@ class UserActivityLogger:
 
         # Centralized template matching your provided photo exactly
         text = (
-            "🚀 <u><b>NEW USER STARTED THE BOT</b></u>\n\n"
+            "🚀 <u><b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ</b></u>\n\n"
             f"📜 User: {user.first_name}\n"
             f"🆔 ID: <code>{user.id}</code>\n"
             f"👤 UN: @{user.username if user.username else 'None'}\n\n"
