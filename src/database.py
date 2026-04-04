@@ -1,5 +1,6 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.database import Database
 import os
@@ -194,7 +195,7 @@ class UserSettingsManager:
                 if group_doc:
                     return UserSettings(
                         user_id=user_id,
-                        language=group_doc.get('language', 'ru'),
+                        language=group_doc.get('language', 'en'),
                         default_quality=group_doc.get('default_quality', 'ask')
                     )
             
@@ -220,7 +221,7 @@ class UserSettingsManager:
             
             return UserSettings(
                 user_id=user_id,
-                language=user_doc.get('language', 'ru'),
+                language=user_doc.get('language', 'en'),
                 default_quality=user_doc.get('default_quality', 'ask'),
                 username=user_doc.get('username'),
                 first_name=user_doc.get('first_name'),
