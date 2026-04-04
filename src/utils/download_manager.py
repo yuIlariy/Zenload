@@ -63,7 +63,6 @@ class DownloadWorker:
         text = self.format_progress("⬆️ Uploading...", current, total)
         await self.update_message(text)
 
-    # ✅ RESTORED: Pyrogram needs this synchronous wrapper
     def upload_progress_sync(self, current, total, *args):
         try:
             loop = asyncio.get_running_loop()
@@ -93,15 +92,19 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
+            # 🔥 FIX: Prevent Telegram API Crash from huge Facebook/Insta captions
+            if metadata and len(metadata) > 1000:
+                # Keep the first 950 characters and append an indicator
+                metadata = metadata[:950] + "...\n\n[Caption truncated]"
+
             file_path_obj = Path(file_path)
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
             self._start_time = time.time()
 
-            # 🔥 SMALL FILE (Restored: This worked perfectly for TikTok)
+            # 🔥 SMALL FILE
             if file_size < 50 * 1024 * 1024:
-                # Tell the user it's uploading so they don't think it froze
                 await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
                 
                 with open(file_path, 'rb') as file:
@@ -110,7 +113,7 @@ class DownloadWorker:
                             audio=file, 
                             caption=metadata, 
                             parse_mode='HTML',
-                            read_timeout=120,  # Prevent PTB from timing out
+                            read_timeout=120,
                             write_timeout=120
                         )
                     else:
@@ -123,7 +126,7 @@ class DownloadWorker:
                             write_timeout=120
                         )
 
-            # 🔥 LARGE FILE (Pyrogram)
+            # 🔥 LARGE FILE
             else:
                 await self.update_message("⬆️ Preparing large upload...")
                 async with UPLOAD_LIMIT:
