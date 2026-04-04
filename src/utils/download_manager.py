@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 class DownloadWorker:
     """Worker class to handle individual downloads"""
+    
+    # Static tracker for cookie/auth failures across all instances
+    auth_failure_tracker = defaultdict(int)
+    ADMIN_ID = 6318135266  # Your Telegram ID
+
     def __init__(self, localization, settings_manager, session: aiohttp.ClientSession, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
@@ -105,10 +110,11 @@ class DownloadWorker:
         user_id = update.effective_user.id
         file_path = None
         start_time = time.time()
+        platform = downloader.__class__.__name__.lower().replace('downloader', '')
 
         # Log download attempt - NOW ASYNC
         if self.activity_logger:
-            await self.activity_logger.log_download_attempt(user_id, url, downloader.__class__.__name__.lower())
+            await self.activity_logger.log_download_attempt(user_id, url, platform)
 
         try:
             logger.info(f"Starting download for URL: {url}")
@@ -132,6 +138,10 @@ class DownloadWorker:
             
             # Download content
             metadata, file_path = await downloader.download(url, format_id)
+            
+            # Reset failure counter on a successful download for this platform
+            DownloadWorker.auth_failure_tracker[platform] = 0
+            
             logger.info(f"Download completed. File path: {file_path}")
             
             # Sending phase
@@ -155,16 +165,36 @@ class DownloadWorker:
             await self.update_status(status_message, user_id, 'status_sending', 100)
             logger.info("File sent successfully")
 
-        except DownloadError as e:
+        except (DownloadError, Exception) as e:
             error_message = str(e)
-            fail_msg = await self.get_message(user_id, 'download_failed', error=error_message)
-            await update.effective_message.reply_text(fail_msg)
-            logger.error(f"Download error for {url}: {error_message}")
+            error_lower = error_message.lower()
 
-        except Exception as e:
-            err_msg = await self.get_message(user_id, 'error_occurred')
-            await update.effective_message.reply_text(err_msg)
-            logger.error(f"Unexpected error processing {url}: {e}", exc_info=True)
+            # Cookie Expiration Alert Logic
+            if any(key in error_lower for key in ["auth", "cookie", "sign in", "login", "authentication"]):
+                DownloadWorker.auth_failure_tracker[platform] += 1
+                logger.warning(f"Auth failure detected for {platform}. Count: {DownloadWorker.auth_failure_tracker[platform]}")
+                
+                if DownloadWorker.auth_failure_tracker[platform] >= 5:
+                    alert_text = (
+                        f"🚨 <b>Cookie Alert!</b>\n\n"
+                        f"Platform: <code>{platform}</code>\n"
+                        f"Status: 5 consecutive authentication errors detected.\n"
+                        f"Action: Please update your <code>{platform}.txt</code> cookies immediately!"
+                    )
+                    try:
+                        # Attempt to send alert directly via the bot instance
+                        await update.get_bot().send_message(chat_id=self.ADMIN_ID, text=alert_text, parse_mode='HTML')
+                    except Exception as alert_err:
+                        logger.error(f"Failed to send admin alert: {alert_err}")
+
+            if isinstance(e, DownloadError):
+                fail_msg = await self.get_message(user_id, 'download_failed', error=error_message)
+                await update.effective_message.reply_text(fail_msg)
+                logger.error(f"Download error for {url}: {error_message}")
+            else:
+                err_msg = await self.get_message(user_id, 'error_occurred')
+                await update.effective_message.reply_text(err_msg)
+                logger.error(f"Unexpected error processing {url}: {e}", exc_info=True)
 
         finally:
             # Calculate processing time
