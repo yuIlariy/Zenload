@@ -13,7 +13,7 @@ from telegram.ext import (
     InlineQueryHandler, filters
 )
 
-from pyrogram import Client # 🔥 Import Pyrogram directly instead of pyro_client.py
+from pyrogram import Client 
 
 from .config import TOKEN, LOGGING_CONFIG, BASE_DIR
 from .database import UserSettingsManager, UserActivityLogger
@@ -55,6 +55,7 @@ class ZenloadBot:
         self.settings_manager = UserSettingsManager()
         self.localization = Localization()
 
+        # Initialize persistent activity logger
         self.activity_logger = UserActivityLogger(
             self.settings_manager.db,
             bot=self.application.bot
@@ -67,6 +68,7 @@ class ZenloadBot:
             self.settings_manager
         )
 
+        # Link download manager to activity logger for stat tracking
         self.download_manager = DownloadManager(
             self.localization,
             self.settings_manager,
@@ -110,9 +112,16 @@ class ZenloadBot:
         self._setup_handlers()
 
     def _setup_handlers(self):
+        """Register all bot commands"""
         self.application.add_handler(CommandHandler("start", self.command_handlers.start_command))
         self.application.add_handler(CommandHandler("help", self.command_handlers.help_command))
         self.application.add_handler(CommandHandler("settings", self.command_handlers.settings_command))
+        
+        # ✅ REGISTER /NEKO COMMAND
+        self.application.add_handler(CommandHandler("neko", self.command_handlers.neko_command))
+        
+        # ✅ REGISTER /BROADCAST COMMAND
+        self.application.add_handler(CommandHandler("broadcast", self.command_handlers.broadcast_command))
 
         self.application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -126,17 +135,17 @@ class ZenloadBot:
         """🔥 START EVERYTHING IN ONE LOOP"""
         logger.info("🟢 Starting bot...")
 
-        # Create an event to keep the loop running indefinitely
+        # Setup database indexes at startup
+        await self.activity_logger.setup_indexes()
+
         self.stop_event = asyncio.Event()
 
-        # Remove webhook
         try:
             await self.application.bot.delete_webhook(drop_pending_updates=True)
         except Exception:
             pass
 
-        # 🔥 FIX: LAZY INITIALIZE PYROGRAM INSIDE THE ALIVE EVENT LOOP!
-        # This prevents Pyrogram's upload queue from deadlocking
+        # 🔥 PYROGRAM INITIALIZATION
         api_id = os.environ.get("API_ID")
         api_hash = os.environ.get("API_HASH")
         
@@ -150,23 +159,20 @@ class ZenloadBot:
         # Inject the live client into the download manager
         self.download_manager.pyro_client = self.pyro_client
 
-        # 🔥 Start Pyrogram safely
         await self.pyro_client.start()
         logger.info("🚀 Pyrogram started inside live loop")
 
-        # 🔥 Start Telegram bot manually
         await self.application.initialize()
         await self.application.start()
         await self.application.updater.start_polling(drop_pending_updates=True)
         logger.info("🚀 Telegram bot started")
 
-        # 🔥 KEEP RUNNING UNTIL STOP_EVENT IS SET
         await self.stop_event.wait()
 
     async def stop(self):
+        """Graceful shutdown logic"""
         logger.info("Stopping...")
 
-        # Unblock the main loop if it's waiting
         if hasattr(self, 'stop_event'):
             self.stop_event.set()
 
@@ -177,7 +183,6 @@ class ZenloadBot:
             pass
 
         try:
-            # Manually stop the updater and application
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
@@ -199,9 +204,9 @@ class ZenloadBot:
                 pass
 
     def run(self):
+        """Main execution entry point"""
         try:
             asyncio.run(self.start())
         except KeyboardInterrupt:
             logger.info("Stopped manually")
-            # Run the stop method to clean up gracefully
             asyncio.run(self.stop())
