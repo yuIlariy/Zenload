@@ -7,7 +7,6 @@ from typing import Dict, Optional
 import time
 from collections import defaultdict
 import pyrogram
-from concurrent.futures import ThreadPoolExecutor # ✅ Required for non-blocking execution
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -15,11 +14,9 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ✅ Global thread pool to handle CPU-intensive yt-dlp tasks
-thread_executor = ThreadPoolExecutor(max_workers=10)
 
 class DownloadWorker:
-    """Handles individual download and upload tasks without blocking the event loop"""
+    """Handles individual download and upload tasks with live speed and ETA tracking"""
     auth_failure_tracker = defaultdict(int)
 
     # ✅ Supported audio formats
@@ -43,46 +40,52 @@ class DownloadWorker:
         return "█" * filled + "░" * (length - filled)
 
     def format_progress(self, prefix: str, current: int, total: int) -> str:
+        """Calculates and formats the speed and ETA"""
         percent = int((current / total) * 100) if total else 0
         bar = self.build_progress_bar(percent)
 
+        # Speed calculation logic
         elapsed = time.time() - self._start_time if self._start_time else 1
-        speed = current / elapsed if elapsed > 0 else 0
+        if elapsed <= 0: elapsed = 0.01
+        
+        speed = current / elapsed
         speed_mb = speed / (1024 * 1024)
-        remaining = (total - current) / speed if speed > 0 else 0
+        
+        # ETA calculation logic
+        remaining_bytes = total - current
+        eta = remaining_bytes / speed if speed > 0 else 0
 
         return (
-            f"{prefix}\n"
-            f"{bar} {percent}%\n"
-            f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(remaining)}s"
+            f"<b>{prefix}</b>\n"
+            f"<code>{bar}</code> {percent}%\n"
+            f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(eta)}s"
         )
 
     async def update_message(self, text: str):
-        """Thread-safe message updates"""
         try:
             if time.time() - self._last_update_time < self._update_interval:
                 return
             self._last_update_time = time.time()
-            await self._current_message.edit_text(text)
-        except:
-            pass
-
-    def sync_progress_hook(self, status: str, progress: int):
-        """Hook called from background threads to update UI"""
-        loop = asyncio.get_event_loop()
-        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
-        # Schedule the update back on the main event loop
-        asyncio.run_coroutine_threadsafe(self.update_message(text), loop)
-
-    async def upload_progress(self, current, total, *args):
-        try:
-            if current % (1024 * 1024 * 5) < 512 * 1024:
-                logger.info(f"🚀 Uploading: {current/1024/1024:.1f}MB / {total/1024/1024:.1f}MB")
-
-            text = self.format_progress("⬆️ Uploading...", current, total)
-            asyncio.create_task(self.update_message(text))
+            await self._current_message.edit_text(text, parse_mode='HTML')
         except Exception:
             pass
+
+    async def _download_progress(self, status: str, progress_data: dict):
+        """Standardized progress callback for various downloaders"""
+        if not self._start_time:
+            self._start_time = time.time()
+            
+        current = progress_data.get('downloaded_bytes', 0)
+        total = progress_data.get('total_bytes', 0) or progress_data.get('total_bytes_estimate', 0)
+        
+        if total > 0:
+            text = self.format_progress("⬇️ Downloading...", current, total)
+            asyncio.create_task(self.update_message(text))
+
+    async def upload_progress(self, current, total, *args):
+        """Update upload status with speed"""
+        text = self.format_progress("⬆️ Uploading...", current, total)
+        asyncio.create_task(self.update_message(text))
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
@@ -90,42 +93,28 @@ class DownloadWorker:
         start_process_time = time.time()
         user_id = update.effective_user.id
         is_audio = False
-        loop = asyncio.get_running_loop()
 
         try:
             self._current_message = status_message
             self._current_user_id = user_id 
-
-            # Use the thread-safe hook
-            downloader.set_progress_callback(self.sync_progress_hook)
+            
+            # Start timer immediately for download speed
+            self._start_time = time.time()
+            downloader.set_progress_callback(self._download_progress)
 
             await self.update_message("⬇️ Starting download...")
 
-            # ✅ FIX: Run the blocking yt-dlp download in a separate thread
-            metadata, file_path = await loop.run_in_executor(
-                thread_executor, 
-                lambda: downloader.download(url, format_id)
-            )
+            # Await the downloader directly
+            metadata, file_path = await downloader.download(url, format_id)
 
-            if metadata:
-                parts = metadata.split('\n\n')
-                if len(parts) >= 3:
-                    footer = '\n\n'.join(parts[-2:])
-                    header = '\n\n'.join(parts[:-2])
-                    header_lines = header.split('\n')
-                    if len(header_lines) > 3:
-                        header = '\n'.join(header_lines[:3]) + "..."
-                    if len(header) > 800:
-                        header = header[:797] + "..."
-                    metadata = f"{header}\n\n{footer}"
-                else:
-                    if len(metadata) > 900:
-                        metadata = metadata[:897] + "..."
+            if not file_path:
+                raise Exception("File creation failed")
 
             file_path_obj = Path(file_path)
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
+            # Reset timer for upload speed
             self._start_time = time.time()
 
             is_audio = (
@@ -133,101 +122,45 @@ class DownloadWorker:
                 file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS
             )
 
-            # 🔥 SMALL FILE (< 50MB)
-            if file_size < 50 * 1024 * 1024:
-                await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
+            if metadata and len(metadata) > 900:
+                metadata = metadata[:897] + "..."
 
+            # 🔥 UPLOAD LOGIC
+            if file_size < 50 * 1024 * 1024:
+                await self.update_message("⬆️ Uploading to Telegram...")
                 with open(file_path, 'rb') as file:
                     if is_audio:
-                        sent_media = await update.effective_message.reply_audio(
-                            audio=file,
-                            caption=metadata,
-                            parse_mode='HTML'
-                        )
+                        sent_media = await update.effective_message.reply_audio(audio=file, caption=metadata, parse_mode='HTML')
                     else:
-                        sent_media = await update.effective_message.reply_video(
-                            video=file,
-                            caption=metadata,
-                            parse_mode='HTML',
-                            supports_streaming=True
-                        )
-
-            # 🔥 LARGE FILE (> 50MB) - Pyrogram
+                        sent_media = await update.effective_message.reply_video(video=file, caption=metadata, parse_mode='HTML', supports_streaming=True)
             else:
                 await self.update_message("⬆️ Preparing large upload...")
-                logger.info(f"Pyrogram upload start | {file_size/1024/1024:.2f} MB")
-
-                try:
-                    if is_audio:
-                        sent_media = await asyncio.wait_for(
-                            self.pyro_client.send_audio(
-                                chat_id=chat_id,
-                                audio=str(file_path),
-                                caption=metadata,
-                                progress=self.upload_progress,
-                                parse_mode=PyroParseMode.HTML
-                            ),
-                            timeout=900.0 # Increased timeout for large files
-                        )
-                    else:
-                        sent_media = await asyncio.wait_for(
-                            self.pyro_client.send_video(
-                                chat_id=chat_id,
-                                video=str(file_path),
-                                caption=metadata,
-                                supports_streaming=True,
-                                progress=self.upload_progress,
-                                parse_mode=PyroParseMode.HTML
-                            ),
-                            timeout=900.0
-                        )
-                except asyncio.TimeoutError:
-                    logger.error("❌ Upload timed out")
-                    await self.update_message("❌ Upload timed out.")
-                    return
+                if is_audio:
+                    sent_media = await asyncio.wait_for(self.pyro_client.send_audio(chat_id=chat_id, audio=str(file_path), caption=metadata, progress=self.upload_progress, parse_mode=PyroParseMode.HTML), timeout=1200.0)
+                else:
+                    sent_media = await asyncio.wait_for(self.pyro_client.send_video(chat_id=chat_id, video=str(file_path), caption=metadata, supports_streaming=True, progress=self.upload_progress, parse_mode=PyroParseMode.HTML), timeout=1200.0)
 
             await self.update_message("✅ Done!")
 
             if self.activity_logger and sent_media:
-                await self.activity_logger.log_media_transfer(
-                    message=sent_media,
-                    user_id=user_id,
-                    url=url
-                )
+                await self.activity_logger.log_media_transfer(sent_media, user_id, url)
 
         except Exception as e:
             logger.error(f"Download error: {e}", exc_info=True)
             await update.effective_message.reply_text("❌ Download failed.")
 
         finally:
+            # Persistent Stats Update
             if self.activity_logger:
                 total_duration = time.time() - start_process_time
                 actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
-                
-                await self.activity_logger.log_download_complete(
-                    user_id=user_id,
-                    url=url,
-                    success=(sent_media is not None),
-                    file_type="audio" if is_audio else "video",
-                    file_size=actual_size,
-                    processing_time=total_duration
-                )
+                await self.activity_logger.log_download_complete(user_id, url, (sent_media is not None), "audio" if is_audio else "video", actual_size, total_duration)
 
-            if file_path:
-                try:
-                    Path(file_path).unlink()
-                except:
-                    pass
-
-            try:
-                await status_message.delete()
-            except:
-                pass
-
-    async def _download_progress(self, status: str, progress: int):
-        """Fallback for non-blocking status updates"""
-        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
-        asyncio.create_task(self.update_message(text))
+            if file_path and Path(file_path).exists():
+                try: Path(file_path).unlink()
+                except: pass
+            try: await status_message.delete()
+            except: pass
 
 
 class DownloadManager:
