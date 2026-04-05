@@ -7,6 +7,7 @@ from typing import Dict, Optional
 import time
 from collections import defaultdict
 import pyrogram
+from concurrent.futures import ThreadPoolExecutor # ✅ Required for non-blocking execution
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -14,9 +15,11 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# ✅ Global thread pool to handle CPU-intensive yt-dlp tasks
+thread_executor = ThreadPoolExecutor(max_workers=10)
 
 class DownloadWorker:
-    """Handles individual download and upload tasks with persistent stat tracking"""
+    """Handles individual download and upload tasks without blocking the event loop"""
     auth_failure_tracker = defaultdict(int)
 
     # ✅ Supported audio formats
@@ -55,6 +58,7 @@ class DownloadWorker:
         )
 
     async def update_message(self, text: str):
+        """Thread-safe message updates"""
         try:
             if time.time() - self._last_update_time < self._update_interval:
                 return
@@ -62,6 +66,13 @@ class DownloadWorker:
             await self._current_message.edit_text(text)
         except:
             pass
+
+    def sync_progress_hook(self, status: str, progress: int):
+        """Hook called from background threads to update UI"""
+        loop = asyncio.get_event_loop()
+        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
+        # Schedule the update back on the main event loop
+        asyncio.run_coroutine_threadsafe(self.update_message(text), loop)
 
     async def upload_progress(self, current, total, *args):
         try:
@@ -76,19 +87,25 @@ class DownloadWorker:
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
         sent_media = None 
-        start_process_time = time.time()  # Start timer for persistent stats
+        start_process_time = time.time()
         user_id = update.effective_user.id
         is_audio = False
+        loop = asyncio.get_running_loop()
 
         try:
             self._current_message = status_message
             self._current_user_id = user_id 
 
-            downloader.set_progress_callback(self._download_progress)
+            # Use the thread-safe hook
+            downloader.set_progress_callback(self.sync_progress_hook)
 
             await self.update_message("⬇️ Starting download...")
 
-            metadata, file_path = await downloader.download(url, format_id)
+            # ✅ FIX: Run the blocking yt-dlp download in a separate thread
+            metadata, file_path = await loop.run_in_executor(
+                thread_executor, 
+                lambda: downloader.download(url, format_id)
+            )
 
             if metadata:
                 parts = metadata.split('\n\n')
@@ -150,7 +167,7 @@ class DownloadWorker:
                                 progress=self.upload_progress,
                                 parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600.0
+                            timeout=900.0 # Increased timeout for large files
                         )
                     else:
                         sent_media = await asyncio.wait_for(
@@ -162,7 +179,7 @@ class DownloadWorker:
                                 progress=self.upload_progress,
                                 parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600.0
+                            timeout=900.0
                         )
                 except asyncio.TimeoutError:
                     logger.error("❌ Upload timed out")
@@ -183,12 +200,10 @@ class DownloadWorker:
             await update.effective_message.reply_text("❌ Download failed.")
 
         finally:
-            # 📊 Update Persistent Database Stats
             if self.activity_logger:
                 total_duration = time.time() - start_process_time
                 actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
                 
-                # This triggers the $inc logic in your database
                 await self.activity_logger.log_download_complete(
                     user_id=user_id,
                     url=url,
@@ -210,6 +225,7 @@ class DownloadWorker:
                 pass
 
     async def _download_progress(self, status: str, progress: int):
+        """Fallback for non-blocking status updates"""
         text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
         asyncio.create_task(self.update_message(text))
 
