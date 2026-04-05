@@ -10,7 +10,10 @@ from ..utils.cobalt_service import cobalt
 
 logger = logging.getLogger(__name__)
 
+
 class PinterestDownloader(BaseDownloader):
+    """Pinterest downloader using Cobalt API with yt-dlp fallback"""
+    
     def __init__(self):
         super().__init__()
 
@@ -21,8 +24,37 @@ class PinterestDownloader(BaseDownloader):
         return any(x in url.lower() for x in ['pinterest.com', 'pin.it'])
 
     async def get_formats(self, url: str) -> List[Dict]:
-        """Simple format check for the menu"""
+        """Get available formats"""
         self.update_progress('status_getting_info', 0)
+        
+        # Try Cobalt
+        result = await cobalt.request(url)
+        if result.success:
+            self.update_progress('status_getting_info', 100)
+            return [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
+        
+        # Fallback to yt-dlp
+        logger.info(f"[Pinterest] Cobalt failed ({result.error}), trying yt-dlp")
+        try:
+            ydl_opts = {'quiet': True, 'no_warnings': True}
+            
+            def extract():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            
+            info = await asyncio.to_thread(extract)
+            self.update_progress('status_getting_info', 100)
+            
+            if info and 'formats' in info:
+                formats = []
+                for f in info['formats']:
+                    if f.get('height'):
+                        formats.append({'id': f['format_id'], 'quality': f"{f['height']}p", 'ext': 'mp4'})
+                return sorted(formats, key=lambda x: int(x['quality'][:-1]), reverse=True) if formats else [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
+            
+        except Exception as e:
+            logger.warning(f"[Pinterest] yt-dlp format error: {e}")
+        
         return [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
@@ -31,7 +63,13 @@ class PinterestDownloader(BaseDownloader):
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
         
-        # --- 1. Try Cobalt First (Most efficient) ---
+        # 🔥 Simple Caption (No repetitions)
+        caption = (
+            "🎬 <b>Pinterest Download</b>\n\n"
+            "📥 Downloader: @Tik_TokDownloader_Bot"
+        )
+        
+        # === Try Cobalt ===
         self.update_progress('status_downloading', 10)
         filename, file_path = await cobalt.download(
             url, 
@@ -39,60 +77,35 @@ class PinterestDownloader(BaseDownloader):
             progress_callback=self.update_progress
         )
         
-        # If Cobalt works, we still need a title. We'll use a very safe default 
-        # to avoid hitting the URL again and getting blocked.
         if file_path and file_path.exists():
-            caption = (
-                f"🎬 <b>Pinterest Video</b>\n\n"
-                f"⚡ Pinterest\n"
-                f"✨ By Pinterest User\n\n"
-                f"📥 Downloader: @Tik_TokDownloader_Bot"
-            )
             return caption, file_path
         
-        # --- 2. Fallback to yt-dlp (Single Request) ---
-        logger.info("[Pinterest] Cobalt failed, trying yt-dlp fallback")
+        # === Fallback to yt-dlp ===
+        logger.info("[Pinterest] Cobalt failed, trying yt-dlp")
         self.update_progress('status_downloading', 30)
         
         try:
-            # DO NOT call get_info here. Go straight to download.
             ydl_opts = {
-                'format': 'best', # Don't force a specific ID, Pinterest changes them
+                'format': format_id or 'best',
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
+                'quiet': False,
             }
             
             def download_video():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # extract_info with download=True returns the data AND saves the file
                     return ydl.extract_info(url, download=True)
             
             info = await asyncio.to_thread(download_video)
             
             if info:
-                # Extract title and uploader FROM THE DOWNLOADED INFO
-                title = info.get('title') or info.get('description') or "Pinterest Video"
-                uploader = info.get('uploader') or "Pinterest"
-                
-                if len(title) > 800:
-                    title = title[:797] + "..."
-
-                caption = (
-                    f"🎬 <b>{title}</b>\n\n"
-                    f"⚡ Pinterest\n"
-                    f"✨ By {uploader}\n\n"
-                    f"📥 Downloader: @Tik_TokDownloader_Bot"
-                )
-
-                actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
-                file_path = Path(actual_filename).resolve()
-                
-                if file_path.exists():
-                    return caption, file_path
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    filename = ydl.prepare_filename(info)
+                    file_path = Path(filename).resolve()
+                    if file_path.exists():
+                        return caption, file_path
             
-            raise DownloadError("File downloaded but not found")
+            raise DownloadError("Failed to download")
             
         except Exception as e:
-            logger.error(f"[Pinterest] yt-dlp failed: {e}")
+            logger.error(f"[Pinterest] Download failed: {e}")
             raise DownloadError(f"Ошибка загрузки: {str(e)}")
