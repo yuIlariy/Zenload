@@ -13,7 +13,7 @@ from ..config import DOWNLOADS_DIR
 logger = logging.getLogger(__name__)
 
 class YandexMusicDownloader(BaseDownloader):
-    """Downloader for Yandex Music"""
+    """Downloader for Yandex Music with professional metadata formatting"""
 
     def __init__(self):
         super().__init__()
@@ -51,12 +51,10 @@ class YandexMusicDownloader(BaseDownloader):
 
     def _extract_track_id(self, url: str) -> str:
         """Extract track ID from URL"""
-        # Try album/track pattern first
         match = re.search(r'album/(\d+)/track/(\d+)', url)
         if match:
             return f"{match.group(2)}:{match.group(1)}"
         
-        # Try direct track pattern
         match = re.search(r'track/(\d+)', url)
         if match:
             return match.group(1)
@@ -75,53 +73,29 @@ class YandexMusicDownloader(BaseDownloader):
             }
             
             response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
-            
             if response.status_code != 200:
-                logger.info(f"[Yandex] Page request failed: {response.status_code}")
                 return None
             
             html = response.text
+            title, artist = None, None
             
-            # Extract both title and description
-            title = None
-            artist = None
-            
-            # Get og:title (track name)
             og_title = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"', html)
             if og_title:
                 title = og_title.group(1)
-                logger.info(f"[Yandex] Found og:title: {title}")
             
-            # Get og:description (format: "Artist • Трек • Year" or "Artist • Альбом • Year")
             og_desc = re.search(r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"', html)
             if og_desc:
                 desc = og_desc.group(1)
-                logger.info(f"[Yandex] Found og:description: {desc}")
-                # Extract artist (first part before •)
                 parts = desc.split('•')
                 if parts:
                     artist = parts[0].strip()
             
-            # Build search query with artist + title
             if title and artist:
-                query = f"{artist} - {title}"
-                logger.info(f"[Yandex] Search query: {query}")
-                return {'search_query': query}
+                return {'search_query': f"{artist} - {title}", 'title': title, 'artist': artist}
             elif title:
-                logger.info(f"[Yandex] Using title only: {title}")
-                return {'search_query': title}
+                return {'search_query': title, 'title': title, 'artist': 'Unknown Artist'}
             
-            # Fallback: title tag
-            title_tag = re.search(r'<title>([^<]+)</title>', html)
-            if title_tag:
-                title = title_tag.group(1)
-                title = re.sub(r'\s*[-—|]\s*(слушать|listen).*$', '', title, flags=re.IGNORECASE)
-                logger.info(f"[Yandex] Found title tag: {title}")
-                return {'search_query': title}
-            
-            logger.info("[Yandex] Could not extract track info from page")
             return None
-            
         except Exception as e:
             logger.error(f"[Yandex] Failed to fetch page: {e}")
             return None
@@ -130,26 +104,22 @@ class YandexMusicDownloader(BaseDownloader):
         """Get track info from Yandex Music API (requires token)"""
         if not self.client:
             return None
-        
         try:
             track = self.client.tracks([track_id])[0]
             if track:
                 return {
                     'title': track.title,
-                    'artists': [artist.name for artist in track.artists],
-                    'album': track.albums[0].title if track.albums else None,
-                    'duration_ms': track.duration_ms,
+                    'artists': ", ".join(artist.name for artist in track.artists),
                     'track': track
                 }
         except Exception as e:
             logger.error(f"Failed to get track info from API: {e}")
         return None
 
-    async def _download_from_youtube(self, query: str) -> Optional[Tuple[str, Path]]:
-        """Download audio from YouTube search"""
+    async def _download_from_youtube(self, query: str, original_title: str = None, original_artist: str = None) -> Optional[Tuple[str, Path]]:
+        """Download audio from YouTube search with professional caption"""
         logger.info(f"[Yandex] Downloading from YouTube: {query}")
         
-        # Prepare filename from query
         safe_filename = self._prepare_filename(query)
         file_path = DOWNLOADS_DIR / f"{safe_filename}.mp3"
         
@@ -162,8 +132,7 @@ class YandexMusicDownloader(BaseDownloader):
                 'preferredquality': '320',
             }],
             'nooverwrites': True,
-            'no_color': True,
-            'quiet': False,
+            'quiet': True,
             'progress_hooks': [self._progress_hook],
             'default_search': 'ytsearch1',
         }
@@ -171,24 +140,27 @@ class YandexMusicDownloader(BaseDownloader):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 self.update_progress('status_downloading', 40)
-                info = await asyncio.to_thread(
-                    ydl.extract_info, f"ytsearch1:{query}", download=True
-                )
+                info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{query}", download=True)
                 
                 if info:
-                    entry = info
-                    if 'entries' in info and len(info['entries']) > 0:
-                        entry = info['entries'][0]
+                    entry = info['entries'][0] if 'entries' in info else info
                     
-                    title = entry.get('title', query)
-                    channel = entry.get('uploader', 'Unknown')
-                    duration_secs = entry.get('duration', 0)
-                    duration_mins = duration_secs // 60
-                    duration_rem = duration_secs % 60
+                    # Use original metadata if we have it, otherwise YouTube's
+                    display_title = original_title or entry.get('title', query)
+                    display_artist = original_artist or entry.get('uploader', 'Unknown')
+
+                    # 🔥 Safety Truncation
+                    if len(display_title) > 800:
+                        display_title = display_title[:797] + "..."
+
+                    # 🔥 Professional Caption
+                    metadata = (
+                        f"🎬 <b>{display_title}</b>\n\n"
+                        f"🎧 Yandex Music | YouTube Fallback\n"
+                        f"✨ By {display_artist}\n\n"
+                        f"📥 Downloader: @Tik_TokDownloader_Bot"
+                    )
                     
-                    metadata = f"{title}\nBy: {channel}\nLength: {duration_mins}:{duration_rem:02d}\n(via YouTube)"
-                    
-                    # Find the downloaded file
                     if file_path.exists():
                         return metadata, file_path
                     
@@ -196,109 +168,74 @@ class YandexMusicDownloader(BaseDownloader):
                     actual_path = Path(actual_filename).with_suffix('.mp3')
                     if actual_path.exists():
                         return metadata, actual_path
-                    
-                    base_path = Path(actual_filename).with_suffix('')
-                    for ext in ['.mp3', '.m4a', '.webm', '.opus']:
-                        check_path = base_path.with_suffix(ext)
-                        if check_path.exists():
-                            return metadata, check_path
-                    
         except Exception as e:
             logger.error(f"[Yandex] YouTube download failed: {e}")
         return None
 
     async def get_formats(self, url: str) -> List[Dict]:
-        """Get available formats - for Yandex Music it's just MP3"""
-        return [{
-            'id': 'mp3',
-            'quality': 'MP3 320kbps',
-            'ext': 'mp3'
-        }]
+        return [{'id': 'mp3', 'quality': 'MP3 320kbps', 'ext': 'mp3'}]
 
     async def download(self, url: str, format_id: str = None) -> Tuple[str, Path]:
         """Download track from Yandex Music or YouTube fallback"""
         try:
             self.update_progress('status_downloading', 0)
             track_id = self._extract_track_id(url)
-            logger.info(f"[Yandex] Track ID: {track_id}")
 
-            # Try Yandex Music API first if client is available
+            # --- Try Yandex Music API First ---
             if self.client:
                 try:
                     track_info = await self._get_track_info_from_api(track_id)
                     if track_info and track_info.get('track'):
                         track = track_info['track']
+                        artists = track_info['artists']
                         
-                        self.update_progress('status_downloading', 20)
-                        download_info = track.get_download_info()
-                        if download_info:
-                            best_info = max(download_info, key=lambda x: x.bitrate_in_kbps)
-                            
-                            title = self._prepare_filename(track.title)
-                            artists = ", ".join(artist.name for artist in track.artists)
-                            filename = f"{artists} - {title}.mp3"
-                            file_path = DOWNLOADS_DIR / filename
+                        title_safe = self._prepare_filename(track.title)
+                        filename = f"{artists} - {title_safe}.mp3"
+                        file_path = DOWNLOADS_DIR / filename
 
-                            self.update_progress('status_downloading', 60)
-                            track.download(file_path)
-                            self.update_progress('status_downloading', 100)
+                        self.update_progress('status_downloading', 60)
+                        await asyncio.to_thread(track.download, str(file_path))
+                        self.update_progress('status_downloading', 100)
 
-                            metadata = []
-                            metadata.append(f"{track.title}")
-                            if artists:
-                                metadata.append(f"By: {artists}")
-                            if track.albums and track.albums[0].title:
-                                metadata.append(f"Album: {track.albums[0].title}")
-                            duration_mins = track.duration_ms // 60000
-                            duration_secs = (track.duration_ms % 60000) // 1000
-                            metadata.append(f"Length: {duration_mins}:{duration_secs:02d}")
+                        # 🔥 Professional Caption for Native API
+                        display_title = track.title
+                        if len(display_title) > 800:
+                            display_title = display_title[:797] + "..."
 
-                            return " | ".join(metadata), file_path
+                        metadata = (
+                            f"🎬 <b>{display_title}</b>\n\n"
+                            f"🎧 Yandex Music\n"
+                            f"✨ By {artists}\n\n"
+                            f"📥 Downloader: @Tik_TokDownloader_Bot"
+                        )
+                        return metadata, file_path
                 except Exception as e:
-                    logger.info(f"[Yandex] API download failed: {e}, trying YouTube fallback")
+                    logger.info(f"[Yandex] API path failed: {e}")
 
-            # YouTube fallback - first try to get track info from page
+            # --- YouTube Fallback Path ---
             self.update_progress('status_downloading', 20)
+            page_info = await self._get_track_info_from_page(url.split('?')[0])
             
-            # Clean URL for fetching
-            clean_url = url.split('?')[0]  # Remove query params
-            
-            # Try to get track info from page
-            page_info = await self._get_track_info_from_page(clean_url)
-            search_query = None
-            
-            if page_info and page_info.get('search_query'):
-                search_query = page_info['search_query']
-                logger.info(f"[Yandex] Using search query from page: {search_query}")
-            elif self.client:
-                # Try API as fallback for search query
-                track_info = await self._get_track_info_from_api(track_id)
-                if track_info:
-                    artists = ", ".join(track_info['artists'])
-                    search_query = f"{artists} - {track_info['title']}"
-            
-            if not search_query:
-                raise DownloadError("Не удалось получить информацию о треке для поиска на YouTube")
+            if not page_info:
+                raise DownloadError("Failed to fetch track info")
 
-            # Download from YouTube
-            self.update_progress('status_downloading', 30)
-            result = await self._download_from_youtube(search_query)
+            result = await self._download_from_youtube(
+                page_info['search_query'], 
+                original_title=page_info.get('title'),
+                original_artist=page_info.get('artist')
+            )
             
             if result:
-                metadata, file_path = result
                 self.update_progress('status_downloading', 100)
-                return metadata, file_path
+                return result
 
-            raise DownloadError("Не удалось скачать трек. YouTube fallback не нашёл трек.")
+            raise DownloadError("Download failed via all providers")
 
-        except DownloadError:
-            raise
         except Exception as e:
-            logger.error(f"[Yandex] Error downloading: {str(e)}", exc_info=True)
+            logger.error(f"[Yandex] Error: {e}")
             raise DownloadError(f"Ошибка загрузки: {str(e)}")
 
     def _progress_hook(self, d: Dict):
-        """Progress hook for yt-dlp"""
         if d['status'] == 'downloading':
             try:
                 total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
@@ -306,6 +243,5 @@ class YandexMusicDownloader(BaseDownloader):
                 if total > 0:
                     progress = int((downloaded / total) * 60) + 30
                     self.update_progress('status_downloading', progress)
-            except Exception:
+            except:
                 pass
-
