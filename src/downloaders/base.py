@@ -11,6 +11,7 @@ from ..config import YTDLP_OPTIONS, DOWNLOADS_DIR
 
 logger = logging.getLogger(__name__)
 
+
 class DownloadError(Exception):
     """Custom exception for download errors"""
     pass
@@ -23,7 +24,7 @@ class BaseDownloader(ABC):
         # Load platform-specific options
         self.ydl_opts = YTDLP_OPTIONS.get(self.platform_id(), {}).copy()
 
-        # 🔥 CRITICAL FIX: Remove forced format (causing your error)
+        # 🔥 Remove forced format (important)
         self.ydl_opts.pop('format', None)
 
         self._progress_callback = None
@@ -105,14 +106,20 @@ class BaseDownloader(ABC):
             self.update_progress('status_downloading', 0)
             url = self.preprocess_url(url)
 
-            # Fresh copy (prevents bugs between requests)
             current_opts = self.ydl_opts.copy()
 
             temp_filename = f"zen_{self.platform_id()}_{os.urandom(4).hex()}"
             current_opts['outtmpl'] = str(DOWNLOADS_DIR / f"{temp_filename}.%(ext)s")
 
-            # 🔥 FIXED FORMAT HANDLING (fallback chain)
-            if format_id:
+            # 🔥 FIXED FORMAT HANDLING
+            if format_id == "audio":
+                current_opts['format'] = "bestaudio/best"
+                current_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            elif format_id:
                 current_opts['format'] = (
                     f"{format_id}+bestaudio/"
                     f"{format_id}/"
@@ -133,7 +140,7 @@ class BaseDownloader(ABC):
             if not info:
                 raise DownloadError("Failed to get content information")
 
-            # Find downloaded file
+            # 🔍 Find downloaded file safely
             downloaded_file = None
             for file in DOWNLOADS_DIR.glob(f"{temp_filename}.*"):
                 if file.is_file():
