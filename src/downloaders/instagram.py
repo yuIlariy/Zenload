@@ -88,9 +88,30 @@ class InstagramDownloader(BaseDownloader):
             progress_callback=self.update_progress
         )
         
+        # Get basic info for title if possible
+        video_title = "Video"
+        try:
+            def get_info():
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    return ydl.extract_info(url, download=False)
+            info = await asyncio.to_thread(get_info)
+            video_title = info.get('title') or info.get('description') or "Video"
+        except:
+            pass
+
+        # Safety: Truncate title for Telegram limits
+        if len(video_title) > 800:
+            video_title = video_title[:797] + "..."
+
+        caption = (
+            f"🎬 <b>{video_title}</b>\n\n"
+            f"⚡ Instagram\n\n"
+            f"<a href=\"{url}\">✨ Video Link</a>\n\n"
+            f"📥 Downloaded via: @Tik_TokDownloader_Bot"
+        )
+        
         if file_path and file_path.exists():
-            metadata = f"⚡Instagram\n\n<a href=\"{url}\">✨Video Link</a>\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
-            return metadata, file_path
+            return caption, file_path
         
         # === Fallback to yt-dlp ===
         logger.info("[Instagram] Cobalt failed, trying yt-dlp")
@@ -109,11 +130,20 @@ class InstagramDownloader(BaseDownloader):
             if not info:
                 raise DownloadError("Failed to download video")
             
-            # Find file
-            filename = f"instagram_{shortcode}.mp4" # Assuming mp4
-            file_path = download_dir / filename
+            # Extract title from fallback info
+            fallback_title = info.get('title') or info.get('description') or "Video"
+            if len(fallback_title) > 800:
+                fallback_title = fallback_title[:797] + "..."
             
-            # If exact filename not found, try to find what yt-dlp saved
+            fallback_caption = (
+                f"🎬 <b>{fallback_title}</b>\n\n"
+                f"⚡ Instagram\n\n"
+                f"<a href=\"{url}\">✨ Video Link</a>\n\n"
+                f"📥 Downloaded via: @Tik_TokDownloader_Bot"
+            )
+
+            # Find file
+            file_path = download_dir / f"instagram_{shortcode}.mp4"
             if not file_path.exists():
                 for f in download_dir.glob(f"instagram_{shortcode}.*"):
                     file_path = f
@@ -122,8 +152,7 @@ class InstagramDownloader(BaseDownloader):
             if not file_path.exists():
                  raise DownloadError("File downloaded but not found")
 
-            metadata = f"⚡Instagram\n\n<a href=\"{url}\">✨Video Link</a>\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
-            return metadata, file_path
+            return fallback_caption, file_path
             
         except Exception as e:
             logger.error(f"[Instagram] Download failed: {e}")
