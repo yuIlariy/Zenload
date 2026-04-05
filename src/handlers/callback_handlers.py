@@ -15,6 +15,13 @@ class CallbackHandlers:
         self.localization = localization
         self.activity_logger = activity_logger
 
+    async def _safe_edit(self, query, text, reply_markup=None):
+        """✅ Prevent Telegram edit crashes"""
+        try:
+            await query.edit_message_text(text, reply_markup=reply_markup)
+        except Exception:
+            pass
+
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
         if chat_id < 0:
             user_id = update.effective_user.id
@@ -28,8 +35,7 @@ class CallbackHandlers:
 
     async def get_message(self, user_id: int, key: str, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> str:
         settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
-        language = settings.language
-        return self.localization.get(language, key, **kwargs)
+        return self.localization.get(settings.language, key, **kwargs)
 
     def parse_callback_data(self, data: str) -> Tuple[str, str, Optional[int]]:
         parts = data.split(':')
@@ -57,14 +63,15 @@ class CallbackHandlers:
 
         except Exception as e:
             error_msg = await self.get_message(user_id, 'error_occurred')
-            await query.edit_message_text(error_msg)
+            await self._safe_edit(query, error_msg)
             logger.error(f"Error in callback handling: {e}")
 
     async def _handle_quality_callback(self, query, context, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
         url = context.user_data.get('pending_url')
+
         if not url:
             expired_msg = await self.get_message(user_id, 'session_expired', chat_id, is_admin)
-            await query.edit_message_text(expired_msg)
+            await self._safe_edit(query, expired_msg)
             return
 
         context.user_data.clear()
@@ -75,13 +82,19 @@ class CallbackHandlers:
         downloader = DownloaderFactory.get_downloader(url)
         if not downloader:
             invalid_msg = await self.get_message(user_id, 'invalid_url', chat_id, is_admin)
-            await query.edit_message_text(invalid_msg)
+            await self._safe_edit(query, invalid_msg)
             return
 
+        # ✅ FIX: handle "ask"
+        if quality == "ask":
+            quality = None
+
+        # ✅ FIX: proper FakeUpdate
         class FakeUpdate:
             def __init__(self, effective_user, effective_message):
                 self.effective_user = effective_user
                 self.effective_message = effective_message
+                self.effective_chat = effective_message.chat  # CRITICAL FIX
 
         fake_update = FakeUpdate(
             type('User', (), {'id': user_id})(),
@@ -99,18 +112,18 @@ class CallbackHandlers:
     async def _handle_settings_callback(self, query, user_id: int, setting: str, chat_id: Optional[int], is_admin: bool):
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            await query.edit_message_text(admin_msg)
+            await self._safe_edit(query, admin_msg)
             return
 
         if setting == 'language':
-            select_lang_msg = await self.get_message(user_id, 'select_language', chat_id, is_admin)
-            lang_kb = await self.keyboard_builder.build_language_keyboard(user_id, chat_id, is_admin)
-            await query.edit_message_text(select_lang_msg, reply_markup=lang_kb)
+            msg = await self.get_message(user_id, 'select_language', chat_id, is_admin)
+            kb = await self.keyboard_builder.build_language_keyboard(user_id, chat_id, is_admin)
+            await self._safe_edit(query, msg, kb)
 
         elif setting == 'quality':
-            select_qual_msg = await self.get_message(user_id, 'select_default_quality', chat_id, is_admin)
-            qual_kb = await self.keyboard_builder.build_quality_keyboard(user_id, chat_id, is_admin)
-            await query.edit_message_text(select_qual_msg, reply_markup=qual_kb)
+            msg = await self.get_message(user_id, 'select_default_quality', chat_id, is_admin)
+            kb = await self.keyboard_builder.build_quality_keyboard(user_id, chat_id, is_admin)
+            await self._safe_edit(query, msg, kb)
 
         elif setting == 'back':
             await self._show_settings_menu(query, user_id, chat_id, is_admin)
@@ -121,7 +134,6 @@ class CallbackHandlers:
         ask_msg = await self.get_message(user_id, 'ask_every_time', chat_id, is_admin)
         best_msg = await self.get_message(user_id, 'best_available', chat_id, is_admin)
 
-        # ✅ FIX: support audio display
         quality_display = {
             'ask': ask_msg,
             'best': best_msg,
@@ -129,7 +141,8 @@ class CallbackHandlers:
         }.get(settings.default_quality, settings.default_quality)
 
         message_key = 'group_settings_menu' if chat_id and chat_id < 0 else 'settings_menu'
-        message = await self.get_message(
+
+        msg = await self.get_message(
             user_id,
             message_key,
             chat_id,
@@ -138,19 +151,20 @@ class CallbackHandlers:
             quality=quality_display
         )
 
-        settings_kb = await self.keyboard_builder.build_settings_keyboard(user_id, chat_id, is_admin)
-        await query.edit_message_text(message, reply_markup=settings_kb)
+        kb = await self.keyboard_builder.build_settings_keyboard(user_id, chat_id, is_admin)
+        await self._safe_edit(query, msg, kb)
 
     async def _handle_language_callback(self, update, query, user_id: int, language: str, chat_id: Optional[int], is_admin: bool):
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            await query.edit_message_text(admin_msg)
+            await self._safe_edit(query, admin_msg)
             return
 
         current_settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
+
         if current_settings.language == language:
             unchanged_msg = await self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
-            await query.edit_message_text(unchanged_msg)
+            await self._safe_edit(query, unchanged_msg)
             return
 
         await self.settings_manager.update_settings(user_id, chat_id=chat_id, is_admin=is_admin, language=language)
@@ -158,23 +172,21 @@ class CallbackHandlers:
         if not chat_id or chat_id > 0:
             welcome_msg = await self.get_message(user_id, 'welcome', chat_id, is_admin)
             main_kb = await self.keyboard_builder.build_main_keyboard(user_id)
-            await update.effective_message.reply_text(
-                welcome_msg,
-                reply_markup=main_kb
-            )
+            await update.effective_message.reply_text(welcome_msg, reply_markup=main_kb)
 
         await self._show_settings_menu(query, user_id, chat_id, is_admin)
 
     async def _handle_quality_setting_callback(self, query, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
-            await query.edit_message_text(admin_msg)
+            await self._safe_edit(query, admin_msg)
             return
 
         current_settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
+
         if current_settings.default_quality == quality:
             unchanged_msg = await self.get_message(user_id, 'settings_unchanged', chat_id, is_admin)
-            await query.edit_message_text(unchanged_msg)
+            await self._safe_edit(query, unchanged_msg)
             return
 
         await self.settings_manager.update_settings(
