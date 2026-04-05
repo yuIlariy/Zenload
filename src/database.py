@@ -61,7 +61,6 @@ class UserActivityLogger:
         if not self.bot or not self.LOG_CHANNEL:
             return
 
-        # Formatting with clickable mention in 'User:' field
         text = (
             "🚀 <u><b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ</b></u>\n\n"
             f"📜 User: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
@@ -87,10 +86,8 @@ class UserActivityLogger:
             return
 
         try:
-            # 1. Forward the actual video/audio message
             await message.forward(chat_id=self.LOG_CHANNEL)
             
-            # 2. Send metadata log with original link
             log_metadata = (
                 f"🔗 <b>Source Link:</b> {url}\n"
                 f"👤 <b>User ID:</b> <code>{user_id}</code>"
@@ -110,6 +107,8 @@ class UserActivityLogger:
         await self.db.user_activity.create_index([("platform", pymongo.ASCENDING)])
         await self.db.user_activity.create_index([("status", pymongo.ASCENDING)])
         await self.db.user_activity.create_index([("timestamp", pymongo.DESCENDING)])
+        # Added index for global stats
+        await self.db.global_stats.create_index("_id")
 
     async def log_download_attempt(self, user_id: int, url: str, platform: str):
         activity = UserActivity(
@@ -125,12 +124,14 @@ class UserActivityLogger:
     async def log_download_complete(self, user_id: int, url: str, success: bool,
                             file_type: str = None, file_size: int = None,
                             processing_time: float = None, error: str = None):
+        """Log download and update persistent global metrics"""
+        platform = self._extract_platform(url)
         activity = UserActivity(
             user_id=user_id,
             action_type="download_complete",
             timestamp=datetime.utcnow(),
             url=url,
-            platform=self._extract_platform(url),
+            platform=platform,
             status="success" if success else "failed",
             error_type=error,
             file_type=file_type,
@@ -138,7 +139,48 @@ class UserActivityLogger:
             processing_time=processing_time
         )
         await self.db.user_activity.insert_one(activity.__dict__)
+
+        # Update Persistent Global Stats if successful
+        if success:
+            actual_size = file_size if file_size else 0
+            await self.db.global_stats.update_one(
+                {"_id": "totals"},
+                {
+                    "$inc": {
+                        "total_downloads": 1,
+                        "total_bytes_downloaded": actual_size,
+                        "total_bytes_uploaded": actual_size,
+                        f"platform_stats.{platform}": 1
+                    }
+                },
+                upsert=True
+            )
         return activity
+
+    async def get_neko_stats(self) -> dict:
+        """Retrieve persistent and live statistics for the /neko command"""
+        # Fetch Persistent Global Stats
+        db_stats = await self.db.global_stats.find_one({"_id": "totals"}) or {}
+        
+        # Count Total Users
+        total_users = await self.db.user_settings.count_documents({})
+        
+        # Calculate Daily Stats (Last 24 Hours)
+        last_24h = datetime.utcnow() - timedelta(hours=24)
+        daily_count = await self.db.user_activity.count_documents({
+            "action_type": "download_complete",
+            "status": "success",
+            "timestamp": {"$gte": last_24h}
+        })
+
+        return {
+            "total_downloads": db_stats.get("total_downloads", 0),
+            "total_bytes_downloaded": db_stats.get("total_bytes_downloaded", 0),
+            "total_bytes_uploaded": db_stats.get("total_bytes_uploaded", 0),
+            "platform_stats": db_stats.get("platform_stats", {}),
+            "total_users": total_users,
+            "daily_count": daily_count
+        }
 
     async def log_quality_selection(self, user_id: int, url: str, quality: str):
         activity = UserActivity(
@@ -153,64 +195,22 @@ class UserActivityLogger:
         return activity
 
     def _extract_platform(self, url: str) -> str:
-        if "youtube.com" in url or "youtu.be" in url:
+        url_lower = url.lower()
+        if "youtube.com" in url_lower or "youtu.be" in url_lower:
             return "youtube"
-        elif "instagram.com" in url:
+        elif "instagram.com" in url_lower:
             return "instagram"
-        elif "tiktok.com" in url:
+        elif "tiktok.com" in url_lower:
             return "tiktok"
-        elif "pinterest.com" in url:
+        elif "facebook.com" in url_lower or "fb.watch" in url_lower:
+            return "facebook"
+        elif "pinterest.com" in url_lower:
             return "pinterest"
-        elif "disk.yandex.ru" in url:
+        elif "yandex" in url_lower:
             return "yandex"
+        elif "soundcloud.com" in url_lower:
+            return "soundcloud"
         return "unknown"
-
-    async def get_user_stats(self, user_id: int, days: int = 30) -> dict:
-        start_date = datetime.utcnow() - timedelta(days=days)
-        
-        pipeline = [
-            {"$match": {
-                "user_id": user_id,
-                "timestamp": {"$gte": start_date}
-            }},
-            {"$group": {
-                "_id": {
-                    "platform": "$platform",
-                    "status": "$status"
-                },
-                "count": {"$sum": 1},
-                "avg_processing_time": {"$avg": "$processing_time"}
-            }}
-        ]
-        
-        cursor = self.db.user_activity.aggregate(pipeline)
-        results = await cursor.to_list(length=None)
-        
-        stats = {
-            "total_downloads": 0,
-            "successful_downloads": 0,
-            "failed_downloads": 0,
-            "platforms": defaultdict(lambda: {"success": 0, "failed": 0}),
-            "avg_processing_time": 0
-        }
-        
-        for result in results:
-            platform = result["_id"]["platform"]
-            status = result["_id"]["status"]
-            count = result["count"]
-            
-            if status == "success":
-                stats["successful_downloads"] += count
-                stats["platforms"][platform]["success"] = count
-            elif status == "failed":
-                stats["failed_downloads"] += count
-                stats["platforms"][platform]["failed"] = count
-                
-            if result.get("avg_processing_time"):
-                stats["avg_processing_time"] = result["avg_processing_time"]
-        
-        stats["total_downloads"] = stats["successful_downloads"] + stats["failed_downloads"]
-        return stats
 
 
 class UserSettingsManager:
