@@ -36,6 +36,18 @@ class KeyboardBuilder:
         ]
         return InlineKeyboardMarkup(keyboard)
 
+    def build_force_subscribe_keyboard(self, invite_link: str) -> InlineKeyboardMarkup:
+        """
+        Build the keyboard for the Force Subscribe requirement.
+        Includes a link to the channel and a button to re-check status.
+       
+        """
+        keyboard = [
+            [InlineKeyboardButton("📢 Join Updates Channel", url=invite_link)],
+            [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
     async def build_settings_keyboard(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> InlineKeyboardMarkup:
         """Settings menu"""
         context = f":{chat_id}" if chat_id and chat_id < 0 else ""
@@ -69,7 +81,7 @@ class KeyboardBuilder:
         return InlineKeyboardMarkup(keyboard)
 
     async def build_quality_keyboard(self, user_id: int, chat_id: Optional[int] = None, is_admin: bool = False) -> InlineKeyboardMarkup:
-        """Default quality settings (NOW WITH AUDIO)"""
+        """Default quality settings"""
         context = f":{chat_id}" if chat_id and chat_id < 0 else ""
 
         btn_ask = await self.get_message(user_id, 'btn_ask', chat_id, is_admin)
@@ -86,7 +98,7 @@ class KeyboardBuilder:
         return InlineKeyboardMarkup(keyboard)
 
     async def build_format_selection_keyboard(self, user_id: int, formats: list, chat_id: Optional[int] = None, is_admin: bool = False) -> InlineKeyboardMarkup:
-        """Download format selection (NOW WITH AUDIO)"""
+        """Download format selection keyboard"""
         context = f":{chat_id}" if chat_id and chat_id < 0 else ""
         keyboard = []
 
