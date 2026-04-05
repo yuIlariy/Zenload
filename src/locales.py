@@ -4,12 +4,12 @@ from typing import Dict, Any
 LOCALES: Dict[str, Dict[str, str]] = {
     'ru': {
         'welcome': (
-            "<a href='https://telegra.ph/file/ec17880d61180d3312d6a.jpg'>&#8203;</a>"
+            # Hidden anchor removed to avoid redundant previews
             "<b>UFOload Downloader</b> 📥\n\n"
             "Отправьте ссылку на видео или музыку для скачивания из:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
-            "🔴 • YouTube\n"  # Added YouTube
+            "🔴 • YouTube\n"
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -46,7 +46,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Поддерживаются:\n"
             "• Instagram\n"
             "• TikTok\n"
-            "• YouTube\n"  # Added YouTube
+            "• YouTube\n"
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
@@ -117,12 +117,12 @@ LOCALES: Dict[str, Dict[str, str]] = {
     },
     'en': {
         'welcome': (
-            "<a href='https://telegra.ph/file/ec17880d61180d3312d6a.jpg'>&#8203;</a>"
+            # Hidden anchor removed to avoid redundant previews
             "<b>UFOload Downloader</b> 📥\n\n"
             "Send a video or music link to download from:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
-            "🔴 • YouTube\n"  # Added YouTube
+            "🔴 • YouTube\n"
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -159,7 +159,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Supported:\n"
             "• Instagram\n"
             "• TikTok\n"
-            "• YouTube\n"  # Added YouTube
+            "• YouTube\n"
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
