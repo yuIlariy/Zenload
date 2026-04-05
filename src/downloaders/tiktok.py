@@ -92,11 +92,11 @@ class TikTokDownloader(BaseDownloader):
             url, 
             download_dir,
             progress_callback=self.update_progress,
-            tiktok_watermark=False  # Without watermark
+            tiktok_watermark=False
         )
         
         if file_path and file_path.exists():
-            metadata = f"🎵 <b>TikTok Video</b>\n\n🔗 <a href=\"{url}\">Watch on TikTok</a>\n\n📥 <b>@Tik_TokDownloader_Bot</b>"
+            metadata = f"TikTok\n<a href=\"{url}\">Watch on TikTok</a>"
             return metadata, file_path
         
         # === Fallback to yt-dlp ===
@@ -125,45 +125,19 @@ class TikTokDownloader(BaseDownloader):
             # Find downloaded file
             for file in download_dir.glob(f"{temp_filename}.*"):
                 if file.is_file():
-
                     def format_number(num):
                         if not num: return "0"
                         if num >= 1000000: return f"{num/1000000:.1f}M"
                         if num >= 1000: return f"{num/1000:.1f}K"
                         return str(num)
-
+                    
                     likes = format_number(info.get('like_count', 0))
+                    username = info.get('uploader', '').replace('https://www.tiktok.com/@', '')
                     views = format_number(info.get('view_count', 0))
-
-                    raw_user = info.get('uploader', '')
-                    username = raw_user.replace('https://www.tiktok.com/@', '').replace('@', '').strip()
-
-                    title = info.get('description') or info.get('title') or ""
-                    if title:
-                        title = title.split(' #')[0]
-
-                    # ✅ CLEAN CAPTION
-                    metadata = "🎵 <b>TikTok Video</b>\n\n"
-
-                    if title:
-                        metadata += f"📝 {title}\n\n"
-
-                    if username:
-                        metadata += f"👤 <b>@{username}</b>\n"
-
-                    if views != "0" or likes != "0":
-                        stats = []
-                        if views != "0":
-                            stats.append(f"👁 {views}")
-                        if likes != "0":
-                            stats.append(f"❤️ {likes}")
-                        metadata += " | ".join(stats) + "\n"
-                    else:
-                        metadata += "👁 N/A | ❤️ N/A\n"
-
-                    metadata += f"\n🔗 <a href=\"{url}\">Watch on TikTok</a>\n"
-                    metadata += "\n📥 <b>@Tik_TokDownloader_Bot</b>"
-
+                    
+                    # ✅ ONLY CHANGE HERE
+                    metadata = f"📸TikTok | 👁️{views} | ❤️{likes}\n\n<a href=\"{url}\">🔗 Watch on TikTok</a>\n\n📥 @Tik_TokDownloader_Bot"
+                    
                     return metadata, file
             
             raise DownloadError("Downloaded file not found")
