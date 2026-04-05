@@ -6,6 +6,7 @@ import aiohttp
 from typing import Optional
 import time
 from collections import defaultdict
+import inspect
 import pyrogram
 
 from pyrogram.enums import ParseMode as PyroParseMode
@@ -16,13 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadWorker:
-    """Handles individual download and upload tasks with persistent stat tracking"""
-    auth_failure_tracker = defaultdict(int)
+    """Handles individual download and upload tasks"""
 
+    auth_failure_tracker = defaultdict(int)
     AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.opus', '.ogg', '.webm'}
 
     def __init__(self, localization, settings_manager, session: aiohttp.ClientSession,
                  activity_logger=None, pyro_client=None):
+
         self.localization = localization
         self.settings_manager = settings_manager
         self.session = session
@@ -32,7 +34,7 @@ class DownloadWorker:
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
         self._last_update_time = 0
-        self._update_interval = 3.0   # ✅ increased (less spam)
+        self._update_interval = 3.0
         self._start_time = None
 
     def build_progress_bar(self, percent: int, length: int = 12) -> str:
@@ -65,11 +67,8 @@ class DownloadWorker:
 
     async def upload_progress(self, current, total, *args):
         try:
-            if current % (1024 * 1024 * 5) < 512 * 1024:
-                logger.info(f"🚀 Uploading: {current/1024/1024:.1f}MB / {total/1024/1024:.1f}MB")
-
             text = self.format_progress("⬆️ Uploading...", current, total)
-            await self.update_message(text)   # ✅ FIXED (no task spam)
+            await self.update_message(text)
         except:
             pass
 
@@ -90,12 +89,17 @@ class DownloadWorker:
 
             await self.update_message("⬇️ Starting download...")
 
-            # ✅ CRITICAL FIX: run blocking downloader in thread
-            loop = asyncio.get_running_loop()
-            metadata, file_path = await loop.run_in_executor(
-                None,
-                lambda: downloader.download(url, format_id)
-            )
+            # ✅ SMART FIX: detect async vs sync downloader
+            download_func = downloader.download
+
+            if inspect.iscoroutinefunction(download_func):
+                metadata, file_path = await download_func(url, format_id)
+            else:
+                loop = asyncio.get_running_loop()
+                metadata, file_path = await loop.run_in_executor(
+                    None,
+                    lambda: download_func(url, format_id)
+                )
 
             # ---- metadata trim ----
             if metadata:
@@ -145,7 +149,6 @@ class DownloadWorker:
             # ---- LARGE FILE ----
             else:
                 await self.update_message("⬆️ Uploading large file...")
-                logger.info(f"Pyrogram upload start | {file_size/1024/1024:.2f} MB")
 
                 try:
                     if is_audio:
@@ -215,11 +218,11 @@ class DownloadWorker:
 
     async def _download_progress(self, status: str, progress: int):
         text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
-        await self.update_message(text)   # ✅ FIXED
+        await self.update_message(text)
 
 
 class DownloadManager:
-    """Manages download sessions and worker assignment"""
+    """Manages download sessions"""
 
     def __init__(self, localization, settings_manager,
                  max_concurrent_downloads=10, activity_logger=None):
@@ -230,12 +233,12 @@ class DownloadManager:
         self.activity_logger = activity_logger
         self.pyro_client = None
 
-        # ✅ NEW: concurrency limiter
+        # ✅ Prevent overload
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
 
-        async with self.semaphore:   # ✅ prevents overload
+        async with self.semaphore:
             worker = DownloadWorker(
                 self.localization,
                 self.settings_manager,
