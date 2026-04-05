@@ -91,11 +91,19 @@ class YouTubeDownloader(BaseDownloader):
             raise DownloadError(f"Download error: {str(e)}")
 
     def _prepare_metadata(self, info: Dict, url: str) -> str:
+        # Extract title, views, and uploader
+        title = info.get('title') or info.get('description') or "Video"
         views = info.get('view_count', 0)
         channel = info.get('uploader', 'Unknown')
 
+        # Safety: Truncate title if it's extremely long to prevent Telegram errors
+        if len(title) > 800:
+            title = title[:797] + "..."
+
+        # Return formatted caption including the Title
         return (
-            f"⚡YouTube | {views:,} Views\n\n"
-            f"✨By {channel}\n\n"
-            f"📥Downloaded via: @Tik_TokDownloader_Bot"
+            f"🎬 <b>{title}</b>\n\n"
+            f"⚡ YouTube | {views:,} Views\n"
+            f"✨ By {channel}\n\n"
+            f"📥 Downloadeder: @Tik_TokDownloader_Bot"
         )
