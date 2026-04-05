@@ -8,7 +8,6 @@ import time
 from collections import defaultdict
 import pyrogram
 
-from src.utils.pyro_client import app as pyro_app
 from pyrogram.enums import ParseMode as PyroParseMode
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
@@ -18,19 +17,55 @@ logger = logging.getLogger(__name__)
 class DownloadWorker:
     auth_failure_tracker = defaultdict(int)
 
-    def __init__(self, localization, settings_manager, session: aiohttp.ClientSession, activity_logger=None):
+    def __init__(self, localization, settings_manager, session: aiohttp.ClientSession, activity_logger=None, pyro_client=None):
         self.localization = localization
         self.settings_manager = settings_manager
         self.session = session
         self.activity_logger = activity_logger 
+        self.pyro_client = pyro_client # 🔥 Hooked to the live loop!
 
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
+        self._last_update_time = 0
+        self._update_interval = 2.0
+        self._start_time = None
+
+    def build_progress_bar(self, percent: int, length: int = 12) -> str:
+        filled = int(length * percent / 100)
+        return "█" * filled + "░" * (length - filled)
+
+    def format_progress(self, prefix: str, current: int, total: int) -> str:
+        percent = int((current / total) * 100) if total else 0
+        bar = self.build_progress_bar(percent)
+
+        elapsed = time.time() - self._start_time if self._start_time else 1
+        speed = current / elapsed if elapsed > 0 else 0
+        speed_mb = speed / (1024 * 1024)
+        remaining = (total - current) / speed if speed > 0 else 0
+
+        return (
+            f"{prefix}\n"
+            f"{bar} {percent}%\n"
+            f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(remaining)}s"
+        )
 
     async def update_message(self, text: str):
         try:
+            if time.time() - self._last_update_time < self._update_interval:
+                return
+            self._last_update_time = time.time()
             await self._current_message.edit_text(text)
         except:
+            pass
+
+    async def upload_progress(self, current, total, *args):
+        try:
+            if current % (1024 * 1024 * 5) < 512 * 1024:  
+                logger.info(f"🚀 Pyrogram Uploading: {current/1024/1024:.1f}MB / {total/1024/1024:.1f}MB")
+                
+            text = self.format_progress("⬆️ Uploading...", current, total)
+            asyncio.create_task(self.update_message(text))
+        except Exception:
             pass
 
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
@@ -42,11 +77,12 @@ class DownloadWorker:
             self._current_user_id = update.effective_user.id
             user_id = update.effective_user.id 
 
-            await self.update_message("⬇️ Downloading...")
+            downloader.set_progress_callback(self._download_progress)
+
+            await self.update_message("⬇️ Starting download...")
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            # SMART CAPTION TRUNCATION
             if metadata:
                 parts = metadata.split('\n\n')
                 if len(parts) >= 3:
@@ -66,10 +102,11 @@ class DownloadWorker:
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
+            self._start_time = time.time()
+
             # 🔥 SMALL FILE (< 50MB) - PTB
             if file_size < 50 * 1024 * 1024:
                 await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode, please wait)")
-                
                 with open(file_path, 'rb') as file:
                     if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
                         sent_media = await update.effective_message.reply_audio(
@@ -82,39 +119,32 @@ class DownloadWorker:
                             supports_streaming=True, read_timeout=120, write_timeout=120
                         )
 
-            # 🔥 LARGE FILE (> 50MB) - Pyrogram (NO PROGRESS BAR)
+            # 🔥 LARGE FILE (> 50MB) - LIVE Pyrogram Client
             else:
-                await self.update_message("⬆️ Uploading massive file...\n(Please wait, this will take a moment...)")
+                await self.update_message("⬆️ Preparing large upload...")
                 logger.info(f"Pyrogram starting upload for chat {chat_id}, file size: {file_size/1024/1024:.2f} MB")
                 
                 try:
-                    logger.info("Pinging chat via Pyrogram...")
-                    await pyro_app.send_chat_action(chat_id=chat_id, action=pyrogram.enums.ChatAction.UPLOAD_VIDEO)
-                    logger.info("Chat ping successful! Uploading without progress bar...")
-                except Exception as ping_e:
-                    logger.error(f"Pyrogram chat ping failed: {ping_e}")
-                
-                try:
-                    # Removed 'progress=...' completely!
                     if file_path_obj.suffix.lower() in ['.mp3', '.m4a', '.wav']:
                         sent_media = await asyncio.wait_for(
-                            pyro_app.send_audio(
+                            self.pyro_client.send_audio(
                                 chat_id=chat_id, audio=str(file_path), caption=metadata,
-                                parse_mode=PyroParseMode.HTML
+                                progress=self.upload_progress, parse_mode=PyroParseMode.HTML
                             ),
                             timeout=600.0 
                         )
                     else:
                         sent_media = await asyncio.wait_for(
-                            pyro_app.send_video(
+                            self.pyro_client.send_video(
                                 chat_id=chat_id, video=str(file_path), caption=metadata,
-                                supports_streaming=True, parse_mode=PyroParseMode.HTML
+                                supports_streaming=True, progress=self.upload_progress, 
+                                parse_mode=PyroParseMode.HTML
                             ),
                             timeout=600.0 
                         )
                     logger.info("✅ Pyrogram upload successful.")
                 except asyncio.TimeoutError:
-                    logger.error("❌ Pyrogram upload timed out after 10 minutes!")
+                    logger.error("❌ Pyrogram upload timed out!")
                     await self.update_message("❌ Upload timed out. The file might be too large.")
                     return
 
@@ -140,15 +170,22 @@ class DownloadWorker:
             except:
                 pass
 
+    async def _download_progress(self, status: str, progress: int):
+        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
+        asyncio.create_task(self.update_message(text))
+
+
 class DownloadManager:
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
         self.session = None
         self.activity_logger = activity_logger 
+        self.pyro_client = None # 🔥 Handled by bot.py injection
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
-        worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger)
+        # Pass the live pyro_client directly to the worker
+        worker = DownloadWorker(self.localization, self.settings_manager, self.session, self.activity_logger, self.pyro_client)
         await worker.process_download(downloader, url, update, status_message, format_id)
 
     async def cleanup(self):
