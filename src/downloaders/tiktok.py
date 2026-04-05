@@ -1,8 +1,10 @@
-"""TikTok downloader - Cobalt API primary, yt-dlp fallback"""
+"""TikTok downloader - API + Cobalt + yt-dlp fallback"""
 
 import os
+import re
 import logging
 import asyncio
+import aiohttp
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from urllib.parse import urlparse
@@ -21,13 +23,7 @@ class TikTokDownloader(BaseDownloader):
     def __init__(self):
         super().__init__()
 
-        # 🔥 TikTok cookies path (LIKE INSTAGRAM)
         self.cookies_path = Path(__file__).parent.parent.parent / "cookies" / "tiktok.txt"
-
-        if self.cookies_path.exists():
-            logger.info(f"[TikTok] Found cookies at {self.cookies_path}")
-        else:
-            logger.warning("[TikTok] No cookies file found!")
 
         self.info_opts = {
             'quiet': True,
@@ -36,8 +32,7 @@ class TikTokDownloader(BaseDownloader):
         }
 
     def can_handle(self, url: str) -> bool:
-        parsed = urlparse(url)
-        return bool(parsed.netloc and "tiktok.com" in parsed.netloc)
+        return "tiktok.com" in url
 
     def preprocess_url(self, url: str) -> str:
         return url.split('?')[0]
@@ -55,42 +50,75 @@ class TikTokDownloader(BaseDownloader):
             return f"{num/1_000:.1f}K"
         return str(num)
 
-    # 🔥 STRONG STATS EXTRACTION
-    def extract_stats(self, info: Dict[str, Any]):
-        views = (
-            info.get('view_count')
-            or info.get('play_count')
-            or info.get('views')
-            or info.get('statistics', {}).get('viewCount')
-        )
+    # 🔥 NEW: API SCRAPER (REAL FIX)
+    async def fetch_stats_api(self, url: str):
+        try:
+            api_url = f"https://www.tiktok.com/oembed?url={url}"
 
-        likes = (
-            info.get('like_count')
-            or info.get('likes')
-            or info.get('digg_count')
-            or info.get('statistics', {}).get('likeCount')
-        )
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, timeout=10) as resp:
+                    data = await resp.json()
 
-        return self.format_number(views), self.format_number(likes)
+            # ⚠️ oEmbed doesn't include stats, so we fallback to HTML scrape
+            return None, None
 
-    # 🔥 CAPTION BUILDER
-    def build_caption(self, url: str, title=None, username=None, views=None, likes=None):
+        except Exception as e:
+            logger.warning(f"[TikTok] API failed: {e}")
+            return None, None
+
+    # 🔥 HTML SCRAPER (THIS IS THE REAL POWER)
+    async def scrape_stats_html(self, url: str):
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=10) as resp:
+                    text = await resp.text()
+
+            # Extract JSON from page
+            match = re.search(r'"playCount":(\d+)', text)
+            views = match.group(1) if match else None
+
+            match = re.search(r'"diggCount":(\d+)', text)
+            likes = match.group(1) if match else None
+
+            return self.format_number(views), self.format_number(likes)
+
+        except Exception as e:
+            logger.warning(f"[TikTok] HTML scrape failed: {e}")
+            return None, None
+
+    # 🔥 FINAL STATS GETTER
+    async def get_stats(self, url, info):
+        # 1. Try yt-dlp
+        views = info.get('view_count') or info.get('play_count')
+        likes = info.get('like_count') or info.get('digg_count')
+
+        if views or likes:
+            return self.format_number(views), self.format_number(likes)
+
+        # 2. Try HTML scrape
+        views, likes = await self.scrape_stats_html(url)
+
+        return views, likes
+
+    def build_caption(self, url, title=None, username=None, views=None, likes=None):
         parts = ["🎵 <b>TikTok Video</b>\n"]
 
         if title:
-            clean = title.split(' #')[0]
-            parts.append(f"📝 {clean}\n\n")
+            parts.append(f"📝 {title.split(' #')[0]}\n\n")
 
         if username:
             parts.append(f"👤 <b>@{username}</b>\n")
 
-        stats = []
-        if views:
-            stats.append(f"👁 {views}")
-        if likes:
-            stats.append(f"❤️ {likes}")
-
-        if stats:
+        if views or likes:
+            stats = []
+            if views:
+                stats.append(f"👁 {views}")
+            if likes:
+                stats.append(f"❤️ {likes}")
             parts.append(" | ".join(stats) + "\n")
         else:
             parts.append("👁 N/A | ❤️ N/A\n")
@@ -100,35 +128,29 @@ class TikTokDownloader(BaseDownloader):
 
         return "".join(parts)
 
-    async def _get_video_info(self, url: str) -> Dict[str, Any]:
+    async def _get_video_info(self, url):
         try:
             def extract():
                 with yt_dlp.YoutubeDL(self.info_opts) as ydl:
                     return ydl.extract_info(url, download=False)
 
             return await asyncio.to_thread(extract)
-        except Exception as e:
-            logger.error(f"[TikTok] Metadata failed: {e}")
+        except:
             return {}
 
-    async def get_formats(self, url: str) -> List[Dict]:
-        return [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
-
-    async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        logger.info(f"[TikTok] Downloading: {url}")
-
+    async def download(self, url, format_id=None):
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
 
-        # 1. METADATA
         info = await self._get_video_info(url)
 
         title = info.get('description') or info.get('title')
-        username = (info.get('uploader') or "").replace('@', '').strip()
+        username = (info.get('uploader') or "").replace('@', '')
 
-        views, likes = self.extract_stats(info)
+        # 🔥 USE NEW STATS SYSTEM
+        views, likes = await self.get_stats(url, info)
 
-        # 2. COBALT FIRST
+        # 1. COBALT
         filename, file_path = await cobalt.download(
             url,
             download_dir,
@@ -139,9 +161,7 @@ class TikTokDownloader(BaseDownloader):
         if file_path and file_path.exists():
             return self.build_caption(url, title, username, views, likes), file_path
 
-        # 3. 🔥 YT-DLP FALLBACK (WITH COOKIES + RETRIES)
-        logger.info("[TikTok] Fallback → yt-dlp")
-
+        # 2. yt-dlp fallback
         temp_filename = f"tiktok_{os.urandom(4).hex()}"
 
         ydl_opts = {
@@ -150,50 +170,22 @@ class TikTokDownloader(BaseDownloader):
             'quiet': True,
             'no_warnings': True,
             'cookiefile': str(self.cookies_path) if self.cookies_path.exists() else None,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0'
-            },
-            'progress_hooks': [self._progress_hook],
         }
 
         def run():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 return ydl.extract_info(url, download=True)
 
-        # 🔁 RETRY SYSTEM
-        for attempt in range(3):
-            try:
-                info = await asyncio.to_thread(run)
-                break
-            except Exception as e:
-                logger.warning(f"[TikTok] Retry {attempt+1}: {e}")
-                if attempt == 2:
-                    raise DownloadError("yt-dlp failed after retries")
-                await asyncio.sleep(2)
+        info = await asyncio.to_thread(run)
 
-        # FIND FILE
         for file in download_dir.glob(f"{temp_filename}.*"):
             if file.is_file():
-                views, likes = self.extract_stats(info)
-
                 return self.build_caption(
                     url,
-                    info.get('description') or info.get('title'),
-                    (info.get('uploader') or "").replace('@', '').strip(),
+                    info.get('title'),
+                    info.get('uploader'),
                     views,
                     likes
                 ), file
 
-        raise DownloadError("File not found")
-
-    def _progress_hook(self, d: Dict[str, Any]):
-        if d['status'] == 'downloading':
-            try:
-                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-                downloaded = d.get('downloaded_bytes', 0)
-
-                if total > 0:
-                    percent = int((downloaded / total) * 100)
-                    self.update_progress('status_downloading', percent)
-            except:
-                pass
+        raise DownloadError("Download failed")
