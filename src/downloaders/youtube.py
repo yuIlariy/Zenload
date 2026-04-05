@@ -105,5 +105,5 @@ class YouTubeDownloader(BaseDownloader):
             f"🎬 <b>{title}</b>\n\n"
             f"⚡ YouTube | {views:,} Views\n"
             f"✨ By {channel}\n\n"
-            f"📥 Downloadeder: @Tik_TokDownloader_Bot"
+            f"📥 Downloader: @Tik_TokDownloader_Bot"
         )
