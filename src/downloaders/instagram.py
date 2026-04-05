@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 
 
 class InstagramDownloader(BaseDownloader):
-    """Instagram downloader using Cobalt API with yt-dlp fallback"""
-    
     def __init__(self):
         super().__init__()
+        # 🔥 Path to your Instagram cookies
+        self.cookies_path = Path(__file__).parent.parent.parent / "cookies" / "instagram.txt"
+        
         self.ydl_opts.update({
             'format': 'best',
             'nooverwrites': True,
             'quiet': True,
             'no_warnings': True,
+            'cookiefile': str(self.cookies_path) if self.cookies_path.exists() else None # 🔥 Use cookies
         })
 
     def _extract_shortcode(self, url: str) -> Optional[str]:
