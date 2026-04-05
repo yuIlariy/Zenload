@@ -75,7 +75,7 @@ class CommandHandlers:
 
         # Construct Rocket-Style Status Message
         message = (
-            "📊 <b>Zenload Stats</b>\n\n"
+            "📊 <b>UFOload Stats</b>\n\n"
             f"📥 <b>Downloads:</b> <code>{stats_data.get('total_downloads', 0)}</code>\n"
             f"📤 <b>Uploads:</b> <code>{stats_data.get('total_downloads', 0)}</code>\n\n"
             f"💾 <b>Downloaded:</b> <code>{format_size(stats_data.get('total_bytes_downloaded', 0))}</code>\n"
