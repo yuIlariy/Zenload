@@ -109,7 +109,7 @@ class CommandHandlers:
             f"💾 <b>Downloaded:</b> <code>{format_size(stats_data.get('total_bytes_downloaded', 0))}</code>\n"
             f"☁️ <b>Uploaded:</b> <code>{format_size(stats_data.get('total_bytes_uploaded', 0))}</code>\n\n"
             f"🖥️ <b>CPU:</b> <code>{cpu}%</code>\n"
-            f"🧠 <b>RAM:</b> <code>{ram.percent}%</code>\n"
+            f"🚀 <b>RAM:</b> <code>{ram.percent}%</code>\n"
             f"⏳ <b>Uptime:</b> <code>{uptime_str}</code>\n\n"
             f"👤 <b>Total Users:</b> <code>{stats_data.get('total_users', 0)}</code>\n"
             f"📈 <b>Daily Stats:</b> <code>{stats_data.get('daily_count', 0)} (24h)</code>\n"
