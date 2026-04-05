@@ -13,9 +13,7 @@ from ..utils.cobalt_service import cobalt
 
 logger = logging.getLogger(__name__)
 
-
 class TikTokDownloader(BaseDownloader):
-
     def platform_id(self) -> str:
         return 'tiktok'
 
@@ -59,7 +57,6 @@ class TikTokDownloader(BaseDownloader):
         if username:
             parts.append(f"👤 <b>@{username}</b>\n")
 
-        # Logic to ensure stats are only added if they exist
         stats = []
         if views and views != "0":
             stats.append(f"👁 {views}")
@@ -79,7 +76,8 @@ class TikTokDownloader(BaseDownloader):
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
 
-        # 1. CRITICAL: Fetch metadata first so we have stats for Cobalt
+        # 1. NON-BLOCKING METADATA PRE-FETCH
+        # We use asyncio.to_thread to prevent the bot from freezing here
         self.update_progress('status_getting_info', 20)
         
         info = {}
@@ -87,14 +85,16 @@ class TikTokDownloader(BaseDownloader):
             def extract():
                 with yt_dlp.YoutubeDL(self.info_opts) as ydl:
                     return ydl.extract_info(url, download=False)
-            info = await asyncio.to_thread(extract)
+            
+            # This was the blocking call causing the freeze
+            info = await asyncio.to_thread(extract) 
         except Exception as e:
             logger.error(f"[TikTok] Metadata pre-fetch failed: {e}")
 
         # Extract values for the caption
         title = info.get('description') or info.get('title')
         raw_user = info.get('uploader') or info.get('uploader_id', 'User')
-        username = raw_user.replace('@', '').strip()
+        username = raw_user.replace('@', '').strip() if raw_user else "User"
         views = self.format_number(info.get('view_count'))
         likes = self.format_number(info.get('like_count'))
 
@@ -108,7 +108,7 @@ class TikTokDownloader(BaseDownloader):
         )
 
         if file_path and file_path.exists():
-            # Use the pre-fetched metadata here
+            # Use the pre-fetched metadata even when Cobalt succeeds
             metadata = self.build_caption(url, title, username, views, likes)
             return metadata, file_path
 
@@ -130,6 +130,7 @@ class TikTokDownloader(BaseDownloader):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
+            # Use to_thread again to prevent freezing during fallback
             info = await asyncio.to_thread(download_video)
 
             for file in download_dir.glob(f"{temp_filename}.*"):
