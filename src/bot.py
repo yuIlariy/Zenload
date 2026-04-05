@@ -13,6 +13,8 @@ from telegram.ext import (
     InlineQueryHandler, filters
 )
 
+from pyrogram import Client # 🔥 Import Pyrogram directly instead of pyro_client.py
+
 from .config import TOKEN, LOGGING_CONFIG, BASE_DIR
 from .database import UserSettingsManager, UserActivityLogger
 from .locales import Localization
@@ -22,8 +24,6 @@ from .handlers import (
     CommandHandlers, MessageHandlers,
     CallbackHandlers, PaymentHandlers, InlineHandlers
 )
-
-from src.utils.pyro_client import app as pyro_app
 
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -135,9 +135,24 @@ class ZenloadBot:
         except Exception:
             pass
 
-        # 🔥 Start Pyrogram INSIDE SAME LOOP
-        await pyro_app.start()
-        logger.info("🚀 Pyrogram started")
+        # 🔥 FIX: LAZY INITIALIZE PYROGRAM INSIDE THE ALIVE EVENT LOOP!
+        # This prevents Pyrogram's upload queue from deadlocking
+        api_id = os.environ.get("API_ID")
+        api_hash = os.environ.get("API_HASH")
+        
+        self.pyro_client = Client(
+            "zenload_bot_session",
+            api_id=int(api_id) if api_id else None,
+            api_hash=api_hash,
+            bot_token=TOKEN
+        )
+        
+        # Inject the live client into the download manager
+        self.download_manager.pyro_client = self.pyro_client
+
+        # 🔥 Start Pyrogram safely
+        await self.pyro_client.start()
+        logger.info("🚀 Pyrogram started inside live loop")
 
         # 🔥 Start Telegram bot manually
         await self.application.initialize()
@@ -156,7 +171,8 @@ class ZenloadBot:
             self.stop_event.set()
 
         try:
-            await pyro_app.stop()
+            if hasattr(self, 'pyro_client'):
+                await self.pyro_client.stop()
         except Exception:
             pass
 
