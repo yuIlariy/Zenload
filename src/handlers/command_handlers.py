@@ -99,13 +99,14 @@ class CommandHandlers:
         )
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command with centralized New User logging"""
+        """Handle /start command with photo and caption"""
         user = update.effective_user
         user_id = user.id
         chat_id = update.effective_chat.id
         chat_type = update.effective_chat.type
         is_admin = await self._is_admin(update, context)
 
+        # Check if brand new user
         existing_user = await self.settings_manager.db.user_settings.find_one({"user_id": user_id})
         
         if not existing_user:
@@ -121,15 +122,30 @@ class CommandHandlers:
             is_premium=user.is_premium if hasattr(user, 'is_premium') else False
         )
         
+        # New Welcome Photo URL
+        welcome_photo = "https://telegra.ph/file/e292b12890b8b4b9dcbd1.jpg"
+
         if chat_type in ['group', 'supergroup']:
             message = await self.get_message(user_id, 'group_welcome_admin' if is_admin else 'group_welcome', chat_id, is_admin)
-            await update.message.reply_text(message, parse_mode=ParseMode.HTML)
+            await update.message.reply_photo(
+                photo=welcome_photo,
+                caption=message,
+                parse_mode=ParseMode.HTML
+            )
         else:
             message = await self.get_message(user_id, 'welcome', chat_id, is_admin)
             welcome_kb = await self.keyboard_builder.build_welcome_keyboard(user_id)
             main_kb = await self.keyboard_builder.build_main_keyboard(user_id)
             
-            await update.message.reply_text(message, reply_markup=welcome_kb, parse_mode=ParseMode.HTML)
+            # Send photo with welcome caption and the settings/help buttons
+            await update.message.reply_photo(
+                photo=welcome_photo,
+                caption=message,
+                reply_markup=welcome_kb,
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Send the main menu keyboard separately as requested
             await update.message.reply_text("👇", reply_markup=main_kb)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
