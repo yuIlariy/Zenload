@@ -8,3 +8,4 @@ yandex_music>=2.2.0
 yt_dlp>=2025.01.26
 pyrogram>=2.0.106
 tgcrypto>=1.2.5
+psutil
