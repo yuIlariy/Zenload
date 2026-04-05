@@ -58,36 +58,39 @@ class SoundcloudDownloader(BaseDownloader):
         return track_meta, file_path, stream_url
 
     def _format_metadata(self, track_meta: Dict) -> str:
-        parts = []
-        title = track_meta.get("title")
-        if title:
-            parts.append(title)
-
+        # Extract title and artist with safe fallbacks
+        title = track_meta.get("title") or "SoundCloud Track"
         user_info = track_meta.get("user") or {}
-        artist = user_info.get("username") or user_info.get("full_name")
-        if artist:
-            parts.append(f"By: {artist}")
-
-        duration_ms = track_meta.get("duration") or track_meta.get("full_duration")
-        if duration_ms:
-            minutes = int(duration_ms) // 60000
-            seconds = int(duration_ms) % 60000 // 1000
-            parts.append(f"Length: {minutes}:{seconds:02d}")
-
+        artist = user_info.get("username") or user_info.get("full_name") or "Unknown Artist"
+        
+        # Format play count (Plays)
+        play_count_str = ""
         play_count = track_meta.get("playback_count")
         if play_count:
             if play_count >= 1_000_000:
-                parts.append(f"Plays: {play_count/1_000_000:.1f}M")
+                play_count_str = f"{play_count/1_000_000:.1f}M"
             elif play_count >= 1_000:
-                parts.append(f"Plays: {play_count/1_000:.1f}K")
+                play_count_str = f"{play_count/1_000:.1f}K"
             else:
-                parts.append(f"Plays: {play_count}")
+                play_count_str = str(play_count)
 
-        permalink = track_meta.get("permalink_url")
-        if permalink:
-            parts.append(permalink)
+        # Safety: Truncate title for Telegram limits (1024 chars)
+        if len(title) > 800:
+            title = title[:797] + "..."
 
-        return " | ".join(parts)
+        # Build professional caption
+        caption_parts = [
+            f"🎬 <b>{title}</b>\n",
+            f"☁️ SoundCloud"
+        ]
+        
+        if play_count_str:
+            caption_parts[1] += f" | {play_count_str} Plays"
+            
+        caption_parts.append(f"✨ By {artist}\n")
+        caption_parts.append(f"📥 Downloader: @Tik_TokDownloader_Bot")
+
+        return "\n".join(caption_parts)
 
     async def download(self, url: str, format_id: str = None) -> Tuple[str, Path]:
         try:
