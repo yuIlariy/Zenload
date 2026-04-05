@@ -63,6 +63,31 @@ class PinterestDownloader(BaseDownloader):
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
         
+        # Pre-fetch metadata for the caption
+        title = "Pinterest Video"
+        uploader = "Pinterest"
+        
+        try:
+            def get_info():
+                with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                    return ydl.extract_info(url, download=False)
+            info = await asyncio.to_thread(get_info)
+            title = info.get('title') or info.get('description') or "Pinterest Video"
+            uploader = info.get('uploader') or info.get('channel') or "Pinterest"
+        except:
+            pass
+
+        # Safety: Truncate title for Telegram limits
+        if len(title) > 800:
+            title = title[:797] + "..."
+
+        caption = (
+            f"🎬 <b>{title}</b>\n\n"
+            f"⚡ Pinterest\n"
+            f"✨ By {uploader}\n\n"
+            f"📥 Downloader: @Tik_TokDownloader_Bot"
+        )
+
         # === Try Cobalt ===
         self.update_progress('status_downloading', 10)
         filename, file_path = await cobalt.download(
@@ -72,8 +97,7 @@ class PinterestDownloader(BaseDownloader):
         )
         
         if file_path and file_path.exists():
-            metadata = f"⚡Pinterest\n\n<a href=\"{url}\">✨Video Link</a>\n\n📥Downloaded via: @Tik_TokDownloader_Bot"
-            return metadata, file_path
+            return caption, file_path
         
         # === Fallback to yt-dlp ===
         logger.info("[Pinterest] Cobalt failed, trying yt-dlp")
@@ -83,7 +107,7 @@ class PinterestDownloader(BaseDownloader):
             ydl_opts = {
                 'format': format_id or 'best',
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
-                'quiet': False,
+                'quiet': True,
             }
             
             def download_video():
@@ -93,13 +117,20 @@ class PinterestDownloader(BaseDownloader):
             info = await asyncio.to_thread(download_video)
             
             if info:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    filename = ydl.prepare_filename(info)
-                    file_path = Path(filename).resolve()
-                    if file_path.exists():
-                        title = info.get('title', '')
-                        metadata = f"Pinterest\n{title}" if title else "Pinterest"
-                        return metadata, file_path
+                # Update metadata from the actual download info if available
+                title = info.get('title') or title
+                if len(title) > 800: title = title[:797] + "..."
+                
+                final_caption = (
+                    f"🎬 <b>{title}</b>\n\n"
+                    f"⚡ Pinterest\n"
+                    f"✨ By {uploader}\n\n"
+                    f"📥 Downloader: @Tik_TokDownloader_Bot"
+                )
+
+                file_path = Path(yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)).resolve()
+                if file_path.exists():
+                    return final_caption, file_path
             
             raise DownloadError("Failed to download")
             
