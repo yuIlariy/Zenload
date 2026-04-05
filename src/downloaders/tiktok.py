@@ -21,7 +21,7 @@ class TikTokDownloader(BaseDownloader):
 
     def __init__(self):
         super().__init__()
-        # Optimized options for fast metadata extraction
+        # Options optimized for fast metadata extraction
         self.info_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -37,10 +37,8 @@ class TikTokDownloader(BaseDownloader):
                 for domain in ['tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'])
         )
 
-    def preprocess_url(self, url: str) -> str:
-        return url.split('?')[0]
-
     def format_number(self, num):
+        """Standardizes large numbers into K/M format"""
         if not num:
             return "0"
         if num >= 1_000_000:
@@ -49,64 +47,58 @@ class TikTokDownloader(BaseDownloader):
             return f"{num/1_000:.1f}K"
         return str(num)
 
-    # 🔥 UPDATED CAPTION LOGIC (Better Title/Username support)
     def build_caption(self, url: str, title: str = None, username: str = None, views=None, likes=None):
+        """Constructs the final Telegram caption with stats"""
         parts = ["🎵 <b>TikTok Video</b>\n"]
 
         if title:
-            # Clean title from common yt-dlp artifacts
+            # Clean title to remove hashtags for a cleaner look
             clean_title = title.split(' #')[0] if ' #' in title else title
             parts.append(f"📝 {clean_title}\n\n")
 
         if username:
             parts.append(f"👤 <b>@{username}</b>\n")
 
-        if views or likes:
-            stats = []
-            if views and views != "0":
-                stats.append(f"👁 {views}")
-            if likes and likes != "0":
-                stats.append(f"❤️ {likes}")
-            if stats:
-                parts.append(" | ".join(stats) + "\n")
+        # Logic to ensure stats are only added if they exist
+        stats = []
+        if views and views != "0":
+            stats.append(f"👁 {views}")
+        if likes and likes != "0":
+            stats.append(f"❤️ {likes}")
+        
+        if stats:
+            parts.append(" | ".join(stats) + "\n")
 
         parts.append(f"\n🔗 <a href=\"{url}\">Watch on TikTok</a>\n")
         parts.append("\n📥 <b>@Tik_TokDownloader_Bot</b>")
 
         return "".join(parts)
 
-    async def _get_video_info(self, url: str) -> Dict[str, Any]:
-        """Fetch metadata independently of the download method"""
-        try:
-            def extract():
-                with yt_dlp.YoutubeDL(self.info_opts) as ydl:
-                    return ydl.extract_info(url, download=False)
-            return await asyncio.to_thread(extract)
-        except Exception as e:
-            logger.error(f"[TikTok] Metadata extraction failed: {e}")
-            return {}
-
-    async def get_formats(self, url: str) -> List[Dict]:
-        self.update_progress('status_getting_info', 0)
-        return [{'id': 'best', 'quality': 'Best (No watermark)', 'ext': 'mp4'}]
-
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
         logger.info(f"[TikTok] Downloading: {url}")
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
 
-        # 1. PRE-FETCH METADATA
+        # 1. CRITICAL: Fetch metadata first so we have stats for Cobalt
         self.update_progress('status_getting_info', 20)
-        info = await self._get_video_info(url)
         
+        info = {}
+        try:
+            def extract():
+                with yt_dlp.YoutubeDL(self.info_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            info = await asyncio.to_thread(extract)
+        except Exception as e:
+            logger.error(f"[TikTok] Metadata pre-fetch failed: {e}")
+
+        # Extract values for the caption
         title = info.get('description') or info.get('title')
-        raw_username = info.get('uploader') or info.get('uploader_id')
-        username = raw_username.replace('@', '').strip() if raw_username else None
-        
+        raw_user = info.get('uploader') or info.get('uploader_id', 'User')
+        username = raw_user.replace('@', '').strip()
         views = self.format_number(info.get('view_count'))
         likes = self.format_number(info.get('like_count'))
 
-        # 2. TRY COBALT FIRST
+        # 2. Try Cobalt for the actual file
         self.update_progress('status_downloading', 10)
         filename, file_path = await cobalt.download(
             url,
@@ -116,10 +108,11 @@ class TikTokDownloader(BaseDownloader):
         )
 
         if file_path and file_path.exists():
+            # Use the pre-fetched metadata here
             metadata = self.build_caption(url, title, username, views, likes)
             return metadata, file_path
 
-        # 3. FALLBACK TO YT-DLP
+        # 3. Fallback to yt-dlp
         logger.info("[TikTok] Cobalt failed → yt-dlp fallback")
         self.update_progress('status_downloading', 30)
 
@@ -137,20 +130,14 @@ class TikTokDownloader(BaseDownloader):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
-            # If pre-fetch failed, this will populate info
-            download_info = await asyncio.to_thread(download_video)
-            info = download_info or info 
+            info = await asyncio.to_thread(download_video)
 
             for file in download_dir.glob(f"{temp_filename}.*"):
                 if file.is_file():
-                    # Final check for metadata if it was missing
-                    current_title = info.get('description') or info.get('title')
-                    current_user = info.get('uploader', '').replace('@', '').strip()
-                    
                     metadata = self.build_caption(
                         url=url,
-                        title=current_title,
-                        username=current_user,
+                        title=info.get('description') or info.get('title'),
+                        username=info.get('uploader', '').replace('@', '').strip(),
                         views=self.format_number(info.get('view_count')),
                         likes=self.format_number(info.get('like_count'))
                     )
