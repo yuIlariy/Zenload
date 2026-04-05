@@ -84,12 +84,31 @@ class CallbackHandlers:
         try:
             member = await context.bot.get_chat_member(self.UPDATES_CHANNEL_ID, user_id)
             if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                # User successfully joined: Remove warning and show welcome
+                # 1. Delete the "Access Denied" warning message
                 await query.message.delete()
                 
+                # 2. Trigger the welcome sequence
                 from .command_handlers import CommandHandlers
                 cmd_handler = CommandHandlers(self.keyboard_builder, self.settings_manager, self.localization)
-                await cmd_handler.start_command(update, context)
+                
+                # FIX: Check if we need to use query.message instead of update.message
+                if update.message:
+                    await cmd_handler.start_command(update, context)
+                else:
+                    # Manually trigger photo sending using the query's message context
+                    welcome_photo = "https://telegra.ph/file/e292b12890b8b4b9dcbd1.jpg"
+                    message = await cmd_handler.get_message(user_id, 'welcome')
+                    welcome_kb = await self.keyboard_builder.build_welcome_keyboard(user_id)
+                    main_kb = await self.keyboard_builder.build_main_keyboard(user_id)
+                    
+                    # Use query.message.reply_photo since update.message is None in callbacks
+                    await query.message.reply_photo(
+                        photo=welcome_photo,
+                        caption=message,
+                        reply_markup=welcome_kb,
+                        parse_mode=ParseMode.HTML
+                    )
+                    await query.message.reply_text("👇", reply_markup=main_kb)
             else:
                 # Still not in the channel
                 await query.answer("⚠️ You still haven't joined the channel!", show_alert=True)
