@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Tuple
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.constants import ChatMemberStatus, ParseMode
 from ..downloaders import DownloaderFactory
 
 logger = logging.getLogger(__name__)
@@ -14,39 +15,50 @@ class CallbackHandlers:
         self.download_manager = download_manager
         self.localization = localization
         self.activity_logger = activity_logger
+        # Match the ID from your command handlers
+        self.UPDATES_CHANNEL_ID = -1002651553501 
 
     async def _safe_edit(self, query, text, reply_markup=None):
         """✅ Prevent Telegram edit crashes"""
         try:
-            await query.edit_message_text(text, reply_markup=reply_markup)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
+        """Check admin status in groups"""
         if chat_id < 0:
             user_id = update.effective_user.id
             try:
                 member = await context.bot.get_chat_member(chat_id, user_id)
-                return member.status in ['creator', 'administrator']
+                return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]
             except Exception as e:
                 logger.error(f"Failed to check admin status: {e}")
                 return False
         return True
 
     async def get_message(self, user_id: int, key: str, chat_id: Optional[int] = None, is_admin: bool = False, **kwargs) -> str:
+        """Get localized text"""
         settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
         return self.localization.get(settings.language, key, **kwargs)
 
     def parse_callback_data(self, data: str) -> Tuple[str, str, Optional[int]]:
+        """Parse colon-separated callback data"""
         parts = data.split(':')
         if len(parts) == 3:
             return parts[0], parts[1], int(parts[2])
         return parts[0], parts[1], None
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Main callback entry point"""
         query = update.callback_query
         await query.answer()
         user_id = update.effective_user.id
+
+        # Handle raw 'check_sub' separately if it's not colon-formatted
+        if query.data == 'check_sub':
+            await self._handle_subscription_check(update, query, context)
+            return
 
         try:
             action, value, chat_id = self.parse_callback_data(query.data)
@@ -66,7 +78,29 @@ class CallbackHandlers:
             await self._safe_edit(query, error_msg)
             logger.error(f"Error in callback handling: {e}")
 
+    async def _handle_subscription_check(self, update: Update, query, context: ContextTypes.DEFAULT_TYPE):
+        """Handles the 'I have joined' button click"""
+        user_id = update.effective_user.id
+        
+        try:
+            member = await context.bot.get_chat_member(self.UPDATES_CHANNEL_ID, user_id)
+            if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                # User joined! Delete the warning and trigger /start logic
+                await query.message.delete()
+                
+                # Import handlers to trigger the welcome screen
+                from .command_handlers import CommandHandlers
+                cmd_handler = CommandHandlers(self.keyboard_builder, self.settings_manager, self.localization)
+                await cmd_handler.start_command(update, context)
+            else:
+                # Still not a member
+                await query.answer("⚠️ You still haven't joined the channel!", show_alert=True)
+        except Exception as e:
+            logger.error(f"Subscription callback check failed: {e}")
+            await query.answer("❌ Error checking subscription. Try again later.")
+
     async def _handle_quality_callback(self, query, context, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
+        """Handle per-download quality selection"""
         url = context.user_data.get('pending_url')
 
         if not url:
@@ -85,16 +119,15 @@ class CallbackHandlers:
             await self._safe_edit(query, invalid_msg)
             return
 
-        # ✅ FIX: handle "ask"
         if quality == "ask":
             quality = None
 
-        # ✅ FIX: proper FakeUpdate
+        # Custom FakeUpdate for compatibility with download manager
         class FakeUpdate:
             def __init__(self, effective_user, effective_message):
                 self.effective_user = effective_user
                 self.effective_message = effective_message
-                self.effective_chat = effective_message.chat  # CRITICAL FIX
+                self.effective_chat = effective_message.chat
 
         fake_update = FakeUpdate(
             type('User', (), {'id': user_id})(),
@@ -110,6 +143,7 @@ class CallbackHandlers:
         )
 
     async def _handle_settings_callback(self, query, user_id: int, setting: str, chat_id: Optional[int], is_admin: bool):
+        """Navigate through settings menus"""
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
             await self._safe_edit(query, admin_msg)
@@ -129,6 +163,7 @@ class CallbackHandlers:
             await self._show_settings_menu(query, user_id, chat_id, is_admin)
 
     async def _show_settings_menu(self, query, user_id: int, chat_id: Optional[int], is_admin: bool):
+        """Display the main settings menu"""
         settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
 
         ask_msg = await self.get_message(user_id, 'ask_every_time', chat_id, is_admin)
@@ -155,6 +190,7 @@ class CallbackHandlers:
         await self._safe_edit(query, msg, kb)
 
     async def _handle_language_callback(self, update, query, user_id: int, language: str, chat_id: Optional[int], is_admin: bool):
+        """Update user language preference"""
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
             await self._safe_edit(query, admin_msg)
@@ -177,6 +213,7 @@ class CallbackHandlers:
         await self._show_settings_menu(query, user_id, chat_id, is_admin)
 
     async def _handle_quality_setting_callback(self, query, user_id: int, quality: str, chat_id: Optional[int], is_admin: bool):
+        """Update default download quality preference"""
         if chat_id and chat_id < 0 and not is_admin:
             admin_msg = await self.get_message(user_id, 'admin_only', chat_id, is_admin)
             await self._safe_edit(query, admin_msg)
