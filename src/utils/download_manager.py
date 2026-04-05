@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadWorker:
+    """Handles individual download and upload tasks with persistent stat tracking"""
     auth_failure_tracker = defaultdict(int)
 
     # ✅ Supported audio formats
@@ -75,11 +76,13 @@ class DownloadWorker:
     async def process_download(self, downloader, url: str, update: Update, status_message: Message, format_id: str = None):
         file_path = None
         sent_media = None 
+        start_process_time = time.time()  # Start timer for persistent stats
+        user_id = update.effective_user.id
+        is_audio = False
 
         try:
             self._current_message = status_message
-            self._current_user_id = update.effective_user.id
-            user_id = update.effective_user.id 
+            self._current_user_id = user_id 
 
             downloader.set_progress_callback(self._download_progress)
 
@@ -87,7 +90,6 @@ class DownloadWorker:
 
             metadata, file_path = await downloader.download(url, format_id)
 
-            # 🔧 Clean caption (Telegram-safe)
             if metadata:
                 parts = metadata.split('\n\n')
                 if len(parts) >= 3:
@@ -109,7 +111,6 @@ class DownloadWorker:
 
             self._start_time = time.time()
 
-            # ✅ Detect audio
             is_audio = (
                 format_id == "audio" or
                 file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS
@@ -124,21 +125,17 @@ class DownloadWorker:
                         sent_media = await update.effective_message.reply_audio(
                             audio=file,
                             caption=metadata,
-                            parse_mode='HTML',
-                            read_timeout=120,
-                            write_timeout=120
+                            parse_mode='HTML'
                         )
                     else:
                         sent_media = await update.effective_message.reply_video(
                             video=file,
                             caption=metadata,
                             parse_mode='HTML',
-                            supports_streaming=True,
-                            read_timeout=120,
-                            write_timeout=120
+                            supports_streaming=True
                         )
 
-            # 🔥 LARGE FILE (> 50MB)
+            # 🔥 LARGE FILE (> 50MB) - Pyrogram
             else:
                 await self.update_message("⬆️ Preparing large upload...")
                 logger.info(f"Pyrogram upload start | {file_size/1024/1024:.2f} MB")
@@ -167,9 +164,6 @@ class DownloadWorker:
                             ),
                             timeout=600.0
                         )
-
-                    logger.info("✅ Pyrogram upload successful.")
-
                 except asyncio.TimeoutError:
                     logger.error("❌ Upload timed out")
                     await self.update_message("❌ Upload timed out.")
@@ -189,6 +183,21 @@ class DownloadWorker:
             await update.effective_message.reply_text("❌ Download failed.")
 
         finally:
+            # 📊 Update Persistent Database Stats
+            if self.activity_logger:
+                total_duration = time.time() - start_process_time
+                actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
+                
+                # This triggers the $inc logic in your database
+                await self.activity_logger.log_download_complete(
+                    user_id=user_id,
+                    url=url,
+                    success=(sent_media is not None),
+                    file_type="audio" if is_audio else "video",
+                    file_size=actual_size,
+                    processing_time=total_duration
+                )
+
             if file_path:
                 try:
                     Path(file_path).unlink()
@@ -206,6 +215,7 @@ class DownloadWorker:
 
 
 class DownloadManager:
+    """Manages download sessions and worker assignment"""
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
