@@ -1,4 +1,4 @@
-"""YouTube downloader with video + audio support"""
+"""YouTube downloader with video + audio support (NO FFmpeg conversion)"""
 
 import logging
 import asyncio
@@ -34,7 +34,7 @@ class YouTubeDownloader(BaseDownloader):
     async def get_formats(self, url: str) -> List[Dict]:
         return [
             {'id': 'auto', 'quality': 'Best Video', 'ext': 'mp4'},
-            {'id': 'audio', 'quality': 'Audio (MP3)', 'ext': 'mp3'},
+            {'id': 'audio', 'quality': 'Audio (Fast)', 'ext': 'm4a'},  # ✅ updated label
         ]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
@@ -44,17 +44,11 @@ class YouTubeDownloader(BaseDownloader):
             download_dir = (Path(__file__).parent.parent.parent / "downloads").resolve()
             download_dir.mkdir(exist_ok=True)
 
-            # 🔥 FORMAT SWITCH
             is_audio = format_id == "audio"
-
-            if is_audio:
-                format_selector = "bestaudio/best"
-            else:
-                format_selector = "bv*+ba/best"
 
             loop = asyncio.get_running_loop()
 
-            # 🔥 THREAD-SAFE PROGRESS
+            # ✅ THREAD-SAFE PROGRESS
             def progress_hook(d: Dict[str, Any]):
                 if d['status'] == 'downloading':
                     try:
@@ -70,37 +64,35 @@ class YouTubeDownloader(BaseDownloader):
                     except Exception:
                         pass
 
-            # 🔥 BASE OPTIONS
+            # ✅ BASE OPTIONS
             ydl_opts = {
-                'format': format_selector,
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
                 'progress_hooks': [progress_hook],
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
-                'format_sort': ['res', 'ext:mp4:m4a'],
             }
 
-            # 🎵 AUDIO MODE
+            # 🎵 AUDIO MODE (NO CONVERSION)
             if is_audio:
                 ydl_opts.update({
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
+                    'format': 'bestaudio[ext=m4a]/bestaudio',
                 })
             else:
-                ydl_opts['merge_output_format'] = 'mp4'
+                ydl_opts.update({
+                    'format': 'bv*+ba/best',
+                    'merge_output_format': 'mp4',
+                })
 
+            # ✅ RUN yt-dlp IN THREAD (SAFE)
             def download_content():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(str(processed_url), download=True)
                     file_path = Path(ydl.prepare_filename(info)).resolve()
 
-                    # 🔧 FIX EXTENSION AFTER PROCESSING
+                    # Fix extension if needed
                     if is_audio:
-                        alt = file_path.with_suffix(".mp3")
+                        alt = file_path.with_suffix(".m4a")
                     else:
                         alt = file_path.with_suffix(".mp4")
 
@@ -131,7 +123,7 @@ class YouTubeDownloader(BaseDownloader):
         if is_audio:
             return (
                 f"🎵 <b>{title}</b>\n\n"
-                f"⚡ YouTube Audio\n"
+                f"⚡ YouTube Audio (Fast)\n"
                 f"✨ By {channel}\n\n"
                 f"📥 Downloader: @Tik_TokDownloader_Bot"
             )
