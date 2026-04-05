@@ -9,7 +9,8 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Отправьте ссылку на видео или музыку для скачивания из:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
-            "🔵 • Facebook\n"  # Added Facebook
+            "🔴 • YouTube\n"  # Added YouTube
+            "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
             "☁️ • SoundCloud\n\n"
@@ -45,7 +46,8 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Поддерживаются:\n"
             "• Instagram\n"
             "• TikTok\n"
-            "• Facebook\n"  # Added Facebook
+            "• YouTube\n"  # Added YouTube
+            "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
@@ -120,7 +122,8 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Send a video or music link to download from:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
-            "🔵 • Facebook\n"  # Added Facebook
+            "🔴 • YouTube\n"  # Added YouTube
+            "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
             "☁️ • SoundCloud\n\n"
@@ -156,7 +159,8 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Supported:\n"
             "• Instagram\n"
             "• TikTok\n"
-            "• Facebook\n"  # Added Facebook
+            "• YouTube\n"  # Added YouTube
+            "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
