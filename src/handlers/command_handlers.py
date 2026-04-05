@@ -73,8 +73,8 @@ class CommandHandlers:
         p_stats = stats_data.get('platform_stats', {})
         top_platform = max(p_stats, key=p_stats.get).capitalize() if p_stats else "N/A"
 
-        # Construct Rocket-Style Status Message
-        message = (
+        # Construct Rocket-Style Status Caption
+        caption = (
             "📊 <b>UFOload Stats</b>\n\n"
             f"📥 <b>Downloads:</b> <code>{stats_data.get('total_downloads', 0)}</code>\n"
             f"📤 <b>Uploads:</b> <code>{stats_data.get('total_downloads', 0)}</code>\n\n"
@@ -88,7 +88,15 @@ class CommandHandlers:
             f"🔥 <b>Top Platform:</b> <code>{top_platform}</code>"
         )
 
-        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
+        # Thumbnail URL
+        photo_url = "https://telegra.ph/file/ec17880d61180d3312d6a.jpg"
+
+        # Send as photo with caption
+        await update.message.reply_photo(
+            photo=photo_url,
+            caption=caption,
+            parse_mode=ParseMode.HTML
+        )
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command with centralized New User logging"""
