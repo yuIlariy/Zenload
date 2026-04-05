@@ -19,12 +19,23 @@ class InstagramDownloader(BaseDownloader):
         # 🔥 Path to your Instagram cookies
         self.cookies_path = Path(__file__).parent.parent.parent / "cookies" / "instagram.txt"
         
+        # Explicitly check and log cookie status
+        if self.cookies_path.exists():
+            logger.info(f"[Instagram] Found cookies at {self.cookies_path}")
+            cookie_file = str(self.cookies_path)
+        else:
+            logger.warning(f"[Instagram] Cookies NOT FOUND at {self.cookies_path}")
+            cookie_file = None
+
         self.ydl_opts.update({
             'format': 'best',
             'nooverwrites': True,
             'quiet': True,
             'no_warnings': True,
-            'cookiefile': str(self.cookies_path) if self.cookies_path.exists() else None # 🔥 Use cookies
+            'cookiefile': cookie_file, # 🔥 Ensure this is explicitly set
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            }
         })
 
     def _extract_shortcode(self, url: str) -> Optional[str]:
@@ -66,19 +77,15 @@ class InstagramDownloader(BaseDownloader):
             
             info = await asyncio.to_thread(extract)
             self.update_progress('status_getting_info', 100)
-            
             return [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
             
         except Exception as e:
             logger.error(f"[Instagram] Format error: {e}")
-            # Even if format extraction fails, we can try downloading
             return [{'id': 'best', 'quality': 'Best', 'ext': 'mp4'}]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
         """Download video - Cobalt first, yt-dlp fallback"""
         shortcode = self._extract_shortcode(url) or 'video'
-        logger.info(f"[Instagram] Downloading: {shortcode}")
-        
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
         
@@ -90,16 +97,17 @@ class InstagramDownloader(BaseDownloader):
             progress_callback=self.update_progress
         )
         
-        # Get basic info for title if possible
-        video_title = "Video"
+        # Try to get metadata using cookies via yt-dlp
+        video_title = "Instagram Video"
         try:
             def get_info():
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                # Use class options which include cookies
+                with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
                     return ydl.extract_info(url, download=False)
             info = await asyncio.to_thread(get_info)
-            video_title = info.get('title') or info.get('description') or "Video"
-        except:
-            pass
+            video_title = info.get('description') or info.get('title') or "Video"
+        except Exception as e:
+            logger.warning(f"[Instagram] Metadata extraction failed: {e}")
 
         # Safety: Truncate title for Telegram limits
         if len(video_title) > 800:
@@ -116,11 +124,11 @@ class InstagramDownloader(BaseDownloader):
             return caption, file_path
         
         # === Fallback to yt-dlp ===
-        logger.info("[Instagram] Cobalt failed, trying yt-dlp")
+        logger.info("[Instagram] Cobalt failed, trying yt-dlp with cookies")
         self.update_progress('status_downloading', 30)
         
         try:
-            ydl_opts = self.ydl_opts.copy()
+            ydl_opts = self.ydl_opts.copy() # Contains cookiefile
             ydl_opts['outtmpl'] = str(download_dir / f"instagram_{shortcode}.%(ext)s")
             
             def download_video():
@@ -132,8 +140,7 @@ class InstagramDownloader(BaseDownloader):
             if not info:
                 raise DownloadError("Failed to download video")
             
-            # Extract title from fallback info
-            fallback_title = info.get('title') or info.get('description') or "Video"
+            fallback_title = info.get('description') or info.get('title') or "Video"
             if len(fallback_title) > 800:
                 fallback_title = fallback_title[:797] + "..."
             
@@ -157,5 +164,5 @@ class InstagramDownloader(BaseDownloader):
             return fallback_caption, file_path
             
         except Exception as e:
-            logger.error(f"[Instagram] Download failed: {e}")
-            raise DownloadError(f"Ошибка загрузки: {str(e)}")
+            logger.error(f"[Instagram] Fallback Download failed: {e}")
+            raise DownloadError(f"Ошибка загрузки (Instagram): {str(e)}")
