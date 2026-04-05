@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import time
 from collections import defaultdict
 import pyrogram
-from concurrent.futures import ThreadPoolExecutor  # ✅ Required for background tasks
+from concurrent.futures import ThreadPoolExecutor # ✅ Added for background processing
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -15,11 +15,11 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ✅ Global thread pool to handle CPU-intensive yt-dlp tasks
+# ✅ Global thread pool to handle CPU-intensive tasks
 thread_executor = ThreadPoolExecutor(max_workers=10)
 
 class DownloadWorker:
-    """Handles individual download/upload tasks without blocking the bot"""
+    """Handles individual download and upload tasks with live speed and ETA tracking"""
     auth_failure_tracker = defaultdict(int)
     AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.opus', '.ogg', '.webm'}
 
@@ -41,11 +41,10 @@ class DownloadWorker:
         return "█" * filled + "░" * (length - filled)
 
     def format_progress(self, prefix: str, current: int, total: int) -> str:
-        """Calculates live speed and ETA for the progress bar"""
+        """Calculates and formats live speed and ETA"""
         percent = int((current / total) * 100) if total else 0
         bar = self.build_progress_bar(percent)
 
-        # Use start time set at the beginning of the action
         elapsed = time.time() - self._start_time if self._start_time else 1
         if elapsed <= 0: elapsed = 0.01
         
@@ -68,24 +67,23 @@ class DownloadWorker:
                 return
             self._last_update_time = time.time()
             await self._current_message.edit_text(text, parse_mode='HTML')
-        except:
+        except Exception:
             pass
 
     def sync_progress_hook(self, status: str, progress_data: dict):
-        """Standardized progress callback for threads"""
+        """Callback from background thread to main event loop"""
         loop = asyncio.get_event_loop()
         
-        # Ensure we have data for speed calculation
         current = progress_data.get('downloaded_bytes', 0)
         total = progress_data.get('total_bytes', 0) or progress_data.get('total_bytes_estimate', 0)
         
         if total > 0:
             text = self.format_progress("⬇️ Downloading...", current, total)
-            # Schedule update back to the main loop thread safely
+            # Schedule update back to the main thread
             asyncio.run_coroutine_threadsafe(self.update_message(text), loop)
 
     async def upload_progress(self, current, total, *args):
-        """Pyrogram progress callback"""
+        """Pyrogram upload progress callback"""
         text = self.format_progress("⬆️ Uploading...", current, total)
         asyncio.create_task(self.update_message(text))
 
@@ -101,18 +99,23 @@ class DownloadWorker:
             self._current_message = status_message
             self._current_user_id = user_id 
             
-            # Start timer IMMEDIATELY for speed calc
+            # Reset timer for speed calculation
             self._start_time = time.time()
             downloader.set_progress_callback(self.sync_progress_hook)
 
             await self.update_message("⬇️ Starting download...")
 
-            # ✅ FIX: Run blocking download in ThreadPoolExecutor to prevent freezing
-            # Uses a lambda to safely call the downloader
-            metadata, file_path = await loop.run_in_executor(
-                thread_executor, 
-                lambda: downloader.download(url, format_id)
-            )
+            # ✅ FIX: Run async downloader inside a background thread with its own loop
+            def run_async_download():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(downloader.download(url, format_id))
+                finally:
+                    new_loop.close()
+
+            # Execute the background download
+            metadata, file_path = await loop.run_in_executor(thread_executor, run_async_download)
 
             if not file_path:
                 raise Exception("File creation failed")
@@ -121,7 +124,7 @@ class DownloadWorker:
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
-            # Reset timer for accurate upload speed
+            # Reset timer for upload speed
             self._start_time = time.time()
 
             is_audio = (format_id == "audio" or file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS)
@@ -129,7 +132,7 @@ class DownloadWorker:
             if metadata and len(metadata) > 900:
                 metadata = metadata[:897] + "..."
 
-            # 🔥 UPLOAD PHASE
+            # 🔥 Upload Phase
             if file_size < 50 * 1024 * 1024:
                 await self.update_message("⬆️ Uploading to Telegram...")
                 with open(file_path, 'rb') as file:
@@ -154,7 +157,6 @@ class DownloadWorker:
             await update.effective_message.reply_text("❌ Download failed.")
 
         finally:
-            # Persistent Stats
             if self.activity_logger:
                 total_duration = time.time() - start_process_time
                 actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
@@ -168,6 +170,7 @@ class DownloadWorker:
 
 
 class DownloadManager:
+    """Manages sessions and background workers"""
     def __init__(self, localization, settings_manager, max_concurrent_downloads=50, max_downloads_per_user=5, activity_logger=None):
         self.localization = localization
         self.settings_manager = settings_manager
