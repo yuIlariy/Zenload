@@ -69,6 +69,7 @@ class PinterestDownloader(BaseDownloader):
         
         try:
             def get_info():
+                # We use a very basic options set here to just get info
                 with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
                     return ydl.extract_info(url, download=False)
             info = await asyncio.to_thread(get_info)
@@ -77,7 +78,6 @@ class PinterestDownloader(BaseDownloader):
         except:
             pass
 
-        # Safety: Truncate title for Telegram limits
         if len(title) > 800:
             title = title[:797] + "..."
 
@@ -104,10 +104,15 @@ class PinterestDownloader(BaseDownloader):
         self.update_progress('status_downloading', 30)
         
         try:
+            # 🔥 FIX: We use 'best' as a fallback if the specific format_id fails
+            # or if the user selected 'Best' from the menu.
+            target_format = format_id if format_id and format_id != 'best' else 'best'
+            
             ydl_opts = {
-                'format': format_id or 'best',
+                'format': f'{target_format}/best', # Try target, then fallback to best
                 'outtmpl': str(download_dir / '%(id)s.%(ext)s'),
                 'quiet': True,
+                'no_warnings': True,
             }
             
             def download_video():
@@ -117,23 +122,18 @@ class PinterestDownloader(BaseDownloader):
             info = await asyncio.to_thread(download_video)
             
             if info:
-                # Update metadata from the actual download info if available
-                title = info.get('title') or title
-                if len(title) > 800: title = title[:797] + "..."
+                # Prepare the final filename
+                actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
+                file_path = Path(actual_filename).resolve()
                 
-                final_caption = (
-                    f"🎬 <b>{title}</b>\n\n"
-                    f"⚡ Pinterest\n"
-                    f"✨ By {uploader}\n\n"
-                    f"📥 Downloader: @Tik_TokDownloader_Bot"
-                )
-
-                file_path = Path(yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)).resolve()
                 if file_path.exists():
-                    return final_caption, file_path
+                    return caption, file_path
             
-            raise DownloadError("Failed to download")
+            raise DownloadError("Failed to locate downloaded file")
             
         except Exception as e:
             logger.error(f"[Pinterest] Download failed: {e}")
+            # If it still fails, one last attempt with absolute 'best'
+            if 'format' in locals() and target_format != 'best':
+                 return await self.download(url, format_id='best')
             raise DownloadError(f"Ошибка загрузки: {str(e)}")
