@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 client = AsyncIOMotorClient(os.getenv('MONGODB_URI'))
 db = client.zenload
 
+
 @dataclass
 class UserSettings:
     user_id: int
@@ -26,6 +27,7 @@ class UserSettings:
     created_at: datetime = None
     updated_at: datetime = None
 
+
 @dataclass
 class GroupSettings:
     group_id: int
@@ -34,6 +36,7 @@ class GroupSettings:
     default_quality: str = 'best'
     created_at: datetime = None
     updated_at: datetime = None
+
 
 @dataclass
 class UserActivity:
@@ -49,36 +52,57 @@ class UserActivity:
     file_size: int = None
     processing_time: float = None
 
+
 class UserActivityLogger:
     def __init__(self, db, bot=None):
         self.db = db
         self.bot = bot
-        # Official log channel ID
         self.LOG_CHANNEL = -1001925329161 
 
     async def log_new_user(self, user):
-        """Send formatted 'New User' log with a clickable mention"""
+        """Send formatted 'New User' log with clickable bot mention"""
         if not self.bot or not self.LOG_CHANNEL:
             return
 
-        text = (
-            "🚀 <u><b>Nᴇᴡ Uꜱᴇʀ Sᴛᴀʀᴛᴇᴅ Tʜᴇ Bᴏᴛ</b></u>\n\n"
-            f"📜 Uꜱᴇʀ: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
-            f"🆔 Iᴅ: <code>{user.id}</code>\n"
-            f"👤 Uɴ: @{user.username if user.username else 'None'}\n\n"
-            f"🗓 Dᴀᴛᴇ: {datetime.now().strftime('%d %B, %Y')}\n"
-            f"⏰ Tɪᴍᴇ: {datetime.now().strftime('%I:%M:%S %p')}"
-        )
-
         try:
+            # Safe bot info fetch
+            bot_name = "Bot"
+            bot_username = None
+
+            try:
+                if not hasattr(self, "bot_info"):
+                    self.bot_info = await self.bot.get_me()
+                bot_name = self.bot_info.first_name or "Bot"
+                bot_username = self.bot_info.username
+            except Exception:
+                pass
+
+            username = f"@{user.username}" if user.username else "N/A"
+
+            if bot_username:
+                bot_link = f"<a href='https://t.me/{bot_username}'>{bot_name}</a>"
+            else:
+                bot_link = bot_name
+
+            text = (
+                "🚀 <b><u>New User Started the Bot</u></b>\n\n"
+                f"<b>👤 User:</b> <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
+                f"<b>🆔 ID:</b> <code>{user.id}</code>\n"
+                f"<b>🔗 Username:</b> {username}\n\n"
+                f"<b>📅 Date:</b> {datetime.now().strftime('%d %B %Y')}\n"
+                f"<b>⏰ Time:</b> {datetime.now().strftime('%I:%M:%S %p')}\n\n"
+                f"🚀 <b>Started:</b> {bot_link}"
+            )
+
             await self.bot.send_message(
                 chat_id=self.LOG_CHANNEL,
                 text=text,
-                parse_mode='HTML'
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
+
         except Exception as e:
             logger.error(f"Failed to send new user log to channel: {e}")
-            
 
     async def log_media_transfer(self, message, user_id: int, url: str):
         """Forward media to log channel and provide the original link"""
@@ -89,8 +113,8 @@ class UserActivityLogger:
             await message.forward(chat_id=self.LOG_CHANNEL)
             
             log_metadata = (
-                f"🔗 <b>Source Link:</b> {url}\n"
-                f"👤 <b>User ID:</b> <code>{user_id}</code>"
+                f"🍺 <b>Source Link:</b> {url}\n\n"
+                f"📜 <b>User ID:</b> <code>{user_id}</code>"
             )
             await self.bot.send_message(
                 chat_id=self.LOG_CHANNEL,
@@ -139,7 +163,6 @@ class UserActivityLogger:
         )
         await self.db.user_activity.insert_one(activity.__dict__)
 
-        # Update Persistent Global Stats if successful
         if success:
             actual_size = file_size if file_size else 0
             await self.db.global_stats.update_one(
@@ -190,7 +213,7 @@ class UserActivityLogger:
         return activity
 
     def _extract_platform(self, url: str) -> str:
-        """✅ FIXED: Categorize URLs for stats, including Spotify and Instagram short links"""
+        """Categorize URLs for stats"""
         url_lower = url.lower()
         if "youtube.com" in url_lower or "youtu.be" in url_lower:
             return "youtube"
@@ -216,7 +239,6 @@ class UserSettingsManager:
         self.db = db
 
     async def setup_indexes(self):
-        """Initialize MongoDB collections and indexes asynchronously"""
         await self.db.user_settings.create_index("user_id", unique=True)
         await self.db.group_settings.create_index("group_id", unique=True)
         await self.db.group_settings.create_index("admin_id")
