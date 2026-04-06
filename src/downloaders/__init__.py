@@ -6,7 +6,8 @@ from .yandex import YandexMusicDownloader
 from .pinterest import PinterestDownloader
 from .youtube import YouTubeDownloader
 from .soundcloud import SoundcloudDownloader
-from .facebook import FacebookDownloader  # Add this import
+from .facebook import FacebookDownloader
+from .spotify import SpotifyDownloader  # ✅ Added Spotify Import
 
 class DownloaderFactory:
     """Factory class to manage and create appropriate downloaders"""
@@ -18,7 +19,8 @@ class DownloaderFactory:
         PinterestDownloader,
         YouTubeDownloader,
         SoundcloudDownloader,
-        FacebookDownloader  # Add this to the list
+        FacebookDownloader,
+        SpotifyDownloader  # ✅ Registered Spotify Downloader
     ]
 
     @classmethod
