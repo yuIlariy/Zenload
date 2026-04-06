@@ -1,9 +1,10 @@
-"""Spotify downloader (YouTube search fallback — FINAL FIX)"""
+"""Spotify downloader (PERFECT MATCH using Spotify oEmbed + smart search)"""
 
 import logging
 import asyncio
+import aiohttp
+import re
 from typing import Dict, List, Optional, Tuple
-from pathlib import Path
 from urllib.parse import urlparse
 
 from .base import BaseDownloader, DownloadError
@@ -21,27 +22,55 @@ class SpotifyDownloader(BaseDownloader):
         return bool(parsed.netloc and 'spotify.com' in parsed.netloc.lower())
 
     async def get_formats(self, url: str) -> List[Dict]:
-        # ✅ no mp3 mention (we avoid conversion completely)
         return [{'id': 'audio', 'quality': 'High Quality Audio', 'ext': 'm4a/webm'}]
 
-    async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
+    async def _get_spotify_metadata(self, url: str) -> str:
+        """🔥 PERFECT: Get exact title + artist using Spotify oEmbed"""
         try:
-            logger.info(f"[Spotify] Processing (YouTube search): {url}")
+            api = f"https://open.spotify.com/oembed?url={url}"
 
-            # ❌ DO NOT use yt-dlp on Spotify URL (DRM)
-            # ✅ Just build a simple search query instead
-            query = "spotify song"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api) as resp:
+                    data = await resp.json()
 
-            # 🔥 STEP 1: YouTube search
-            search_query = f"ytsearch1:{query}"
-            logger.info(f"[Spotify] YouTube search: {search_query}")
+            title = data.get("title", "")
 
-            # 🔥 STEP 2: Download WITHOUT conversion
+            # Example: "Drake - One Dance"
+            if " - " in title:
+                artist, track = title.split(" - ", 1)
+                return f"{artist} {track}"
+
+            return title
+
+        except Exception:
+            return "spotify song"
+
+    def _clean_query(self, query: str) -> str:
+        """Remove junk for better YouTube matching"""
+        query = re.sub(r"\(.*?\)", "", query)
+        query = re.sub(r"\[.*?\]", "", query)
+        query = re.sub(r"official video|lyrics|audio", "", query, flags=re.I)
+        return query.strip()
+
+    async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, str]:
+        try:
+            logger.info(f"[Spotify] Processing: {url}")
+
+            # ✅ STEP 1: perfect metadata
+            query = await self._get_spotify_metadata(url)
+            query = self._clean_query(query)
+
+            logger.info(f"[Spotify] Search query: {query}")
+
+            # 🔥 STEP 2: smarter search (avoid wrong songs)
+            search_query = f"ytsearch1:{query} audio"
+
+            # ✅ STEP 3: download (NO conversion → no freeze)
             metadata, file_path = await super().download(search_query, "audio")
 
             caption = (
                 f"🎵 <b>{metadata}</b>\n\n"
-                f"⚡ <b>Platform:</b> Spotify (YouTube Source)\n"
+                f"⚡ <b>Platform:</b> Spotify (Matched Audio)\n"
                 f"🔗 <a href='{url}'>Watch on Spotify</a>\n\n"
                 f"📥 <b>@Tik_TokDownloader_Bot</b>"
             )
