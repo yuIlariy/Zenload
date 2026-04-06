@@ -113,16 +113,25 @@ class ZenloadBot:
 
     def _setup_handlers(self):
         """Register all bot commands"""
+        # Standard Commands
         self.application.add_handler(CommandHandler("start", self.command_handlers.start_command))
         self.application.add_handler(CommandHandler("help", self.command_handlers.help_command))
         self.application.add_handler(CommandHandler("settings", self.command_handlers.settings_command))
         
-        # ✅ REGISTER /NEKO COMMAND
-        self.application.add_handler(CommandHandler("neko", self.command_handlers.neko_command))
+        # ✅ FIXED: Added missing /zen, /donate, and /paysupport
+        self.application.add_handler(CommandHandler("zen", self.message_handlers.handle_message))
+        self.application.add_handler(CommandHandler("donate", self.payment_handlers.donate_command))
+        self.application.add_handler(CommandHandler("paysupport", self.payment_handlers.paysupport_command))
         
-        # ✅ REGISTER /BROADCAST COMMAND
+        # Admin/Stats Commands
+        self.application.add_handler(CommandHandler("neko", self.command_handlers.neko_command))
         self.application.add_handler(CommandHandler("broadcast", self.command_handlers.broadcast_command))
 
+        # Payment Logic
+        self.application.add_handler(PreCheckoutQueryHandler(self.payment_handlers.handle_pre_checkout))
+        self.application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.payment_handlers.handle_successful_payment))
+
+        # Media and Queries
         self.application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             self.message_handlers.handle_message
