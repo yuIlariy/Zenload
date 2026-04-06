@@ -9,7 +9,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
             "🔴 • YouTube\n"
-            "🟢 • Spotify\n" # ✅ Added Spotify
+            "🟢 • Spotify\n"
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -20,6 +20,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "/donate - Поддержать\n\n"
             "🛸 <i>Powered by</i> <a href='https://t.me/xspes'>NAm</a>"
         ),
+
         'btn_settings': "Настройки",
         'btn_help': "Помощь",
         'btn_language': "Язык",
@@ -31,6 +32,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_best': "Лучшее",
         'btn_donate': "Поддержать",
         'btn_updates': "📢 Канал обновлений",
+
         'help': (
             "Как использовать:\n\n"
             "1. Отправьте ссылку\n"
@@ -41,23 +43,26 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Качество по умолчанию\n\n"
             "Примечание: Контент должен быть публичным"
         ),
+
         'unsupported_url': (
             "Неподдерживаемая ссылка\n\n"
             "Поддерживаются:\n"
             "• Instagram\n"
             "• TikTok\n"
             "• YouTube\n"
-            "• Spotify\n" # ✅ Added Spotify
+            "• Spotify\n"
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
         ),
+
         'settings_menu': (
             "Настройки\n\n"
             "Язык: {language}\n"
             "Качество: {quality}"
         ),
+
         'processing': "Обработка...",
         'select_quality': "Выберите качество:",
         'best_quality': "Лучшее",
@@ -70,6 +75,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'session_expired': "Сессия истекла. Отправьте ссылку заново.",
         'invalid_url': "Неверная ссылка",
         'error_occurred': "Произошла ошибка при обработке запроса",
+
         'download_failed': (
             "Ошибка загрузки: {error}\n\n"
             "Возможные причины:\n"
@@ -78,6 +84,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Контент удален\n"
             "• Неверная ссылка"
         ),
+
         'auth_required': (
             "Требуется авторизация\n\n"
             "Возможные причины:\n"
@@ -85,38 +92,61 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Неверная ссылка\n"
             "• Временная ошибка"
         ),
+
         'donate': (
             "Поддержите разработку бота!\n\n"
             "Выберите сумму поддержки в Stars"
         ),
+
         'invoice_title': "Поддержать UFOload Bot",
         'invoice_description': "Поддержите разработку бота Stars",
         'price_label': "Поддержка (100 Stars)",
+
         'payment_support': (
             "По вопросам оплаты обращайтесь к @xspes"
         ),
+
         'payment_success': "Спасибо за вашу поддержку!",
+
         'group_welcome': (
             "Привет! Используйте команду /zen с ссылкой для загрузки видео или музыки.\n"
             "Примеры:\n"
             "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n" # ✅ Added Spotify example
+            "• /zen https://open.spotify.com/track/...\n"
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
+
+        # 🔥 ADDED ADMIN VERSION
+        'group_welcome_admin': (
+            "👑 <b>Привет, администратор!</b>\n\n"
+            "👥 Вы управляете этой группой с помощью бота.\n\n"
+            "⚙️ Используйте <b>/settings</b> для настройки:\n"
+            "• Язык\n"
+            "• Качество по умолчанию\n\n"
+            "🚀 Используйте <b>/zen</b> с ссылкой для загрузки:\n"
+            "• /zen https://www.instagram.com/p/...\n"
+            "• /zen https://open.spotify.com/track/...\n"
+            "• /zen https://music.yandex.ru/album/123/track/456"
+        ),
+
         'missing_url': "Пожалуйста, укажите ссылку после команды /zen",
         'status_getting_info': "Получение информации... ({progress}%)",
         'status_downloading': "Загрузка... ({progress}%)",
         'status_processing': "Обработка... ({progress}%)",
         'status_sending': "Отправка файла... ({progress}%)",
+
         'admin_only': "Только администраторы могут изменять настройки группы",
         'group_settings_menu': "Настройки группы\n\nЯзык: {language}\nКачество: {quality}",
         'settings_unchanged': "Настройки не изменились",
+
         'error_too_many_downloads': (
             "Слишком много одновременных загрузок.\n"
             "Пожалуйста, подождите завершения текущих загрузок или попробуйте позже."
         ),
+
         'error_rate_limit': "Слишком много запросов. Пожалуйста, подождите несколько секунд."
     },
+
     'en': {
         'welcome': (
             "<b>UFOload Downloader</b> 📥\n\n"
@@ -124,7 +154,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
             "🔴 • YouTube\n"
-            "🟢 • Spotify\n" # ✅ Added Spotify
+            "🟢 • Spotify\n"
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -135,6 +165,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "/donate - Support the bot\n\n"
             "🛸 <i>Powered by</i> <a href='https://t.me/xspes'>NAm</a>"
         ),
+
         'btn_settings': "Settings",
         'btn_help': "Help",
         'btn_language': "Language",
@@ -146,6 +177,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'btn_best': "Best",
         'btn_donate': "Support",
         'btn_updates': "📢 Updates Channel",
+
         'help': (
             "How to use:\n\n"
             "1. Send URL\n"
@@ -156,23 +188,26 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Default quality\n\n"
             "Note: Content must be public"
         ),
+
         'unsupported_url': (
             "Unsupported URL\n\n"
             "Supported:\n"
             "• Instagram\n"
             "• TikTok\n"
             "• YouTube\n"
-            "• Spotify\n" # ✅ Added Spotify
+            "• Spotify\n"
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
             "• SoundCloud"
         ),
+
         'settings_menu': (
             "Settings\n\n"
             "Language: {language}\n"
             "Quality: {quality}"
         ),
+
         'processing': "Processing...",
         'select_quality': "Select quality:",
         'best_quality': "Best",
@@ -185,6 +220,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'session_expired': "Session expired. Send URL again.",
         'invalid_url': "Invalid URL",
         'error_occurred': "Error processing request",
+
         'download_failed': (
             "Download failed: {error}\n\n"
             "Possible reasons:\n"
@@ -193,6 +229,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Content deleted\n"
             "• Invalid URL"
         ),
+
         'auth_required': (
             "Authentication required\n\n"
             "Possible reasons:\n"
@@ -200,36 +237,58 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Invalid URL\n"
             "• Temporary error"
         ),
+
         'donate': (
             "Support bot development!\n\n"
             "Choose support amount in Stars"
         ),
+
         'invoice_title': "Support UFOload Bot",
         'invoice_description': "Support bot development with Stars",
         'price_label': "Support (100 Stars)",
+
         'payment_support': (
             "For payment support, please contact @xspes"
         ),
+
         'payment_success': "Thank you for your support!",
+
         'group_welcome': (
             "Hi! Use the /zen command with a URL to download videos or music.\n"
             "Examples:\n"
             "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n" # ✅ Added Spotify example
+            "• /zen https://open.spotify.com/track/...\n"
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
+
+        # 🔥 ADDED ADMIN VERSION
+        'group_welcome_admin': (
+            "👑 <b>Hello Admin!</b>\n\n"
+            "👥 You are managing this group with the bot.\n\n"
+            "⚙️ Use <b>/settings</b> to configure:\n"
+            "• Language\n"
+            "• Default quality\n\n"
+            "🚀 Use <b>/zen</b> with a URL to download media:\n"
+            "• /zen https://www.instagram.com/p/...\n"
+            "• /zen https://open.spotify.com/track/...\n"
+            "• /zen https://music.yandex.ru/album/123/track/456"
+        ),
+
         'missing_url': "Please provide a URL after the /zen command",
         'status_getting_info': "Getting information... ({progress}%)",
         'status_downloading': "Downloading... ({progress}%)",
         'status_processing': "Processing... ({progress}%)",
         'status_sending': "Sending file... ({progress}%)",
+
         'admin_only': "Only administrators can modify group settings",
         'group_settings_menu': "Group Settings\n\nLanguage: {language}\nQuality: {quality}",
         'settings_unchanged': "Settings remain unchanged",
+
         'error_too_many_downloads': (
             "Too many concurrent downloads.\n"
             "Please wait for current downloads to complete or try again later."
         ),
+
         'error_rate_limit': "Too many requests. Please wait a few seconds."
     }
 }
@@ -237,9 +296,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
 class Localization:
     @staticmethod
     def get(lang: str, key: str, **kwargs) -> str:
-        """
-        Get localized string by key and format it with provided kwargs
-        """
         try:
             text = LOCALES.get(lang, LOCALES['en'])[key]
             return text.format(**kwargs) if kwargs else text
