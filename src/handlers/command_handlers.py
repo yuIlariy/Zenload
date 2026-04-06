@@ -61,7 +61,7 @@ class CommandHandlers:
         return self.localization.get(settings.language, key, **kwargs)
 
     async def neko_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """🔥 GOD MODE (REAL ACCURATE STATS FIXED)"""
+        """🔥 CLEAN STATS SYSTEM"""
         if not await self._check_subscription(update, context):
             return
 
@@ -77,21 +77,19 @@ class CommandHandlers:
             from ..database import UserActivityLogger
             activity_logger = UserActivityLogger(self.settings_manager.db, bot=context.bot)
 
-            stats_data = await activity_logger.get_neko_stats()
+            stats = await activity_logger.get_neko_stats()
             db = self.settings_manager.db
 
-            # ✅ REAL COUNTS
-            success = await db.user_activity.count_documents({
-                "action_type": "download_complete",
-                "status": "success"
-            })
+            # ✅ SOURCE OF TRUTH
+            downloads = stats.get("total_downloads", 0)
 
+            # ❌ FAILED (REAL)
             failed = await db.user_activity.count_documents({
                 "action_type": "download_complete",
                 "status": "failed"
             })
 
-            # ✅ REAL AVG TIME
+            # ⚡ AVG TIME (REAL)
             avg_pipeline = [
                 {"$match": {"action_type": "download_complete", "status": "success"}},
                 {"$group": {"_id": None, "avg": {"$avg": "$processing_time"}}}
@@ -99,7 +97,7 @@ class CommandHandlers:
             avg_res = await db.user_activity.aggregate(avg_pipeline).to_list(1)
             avg_time = avg_res[0]["avg"] if avg_res else 0
 
-            # ✅ FIXED TOP USERS (ONLY SUCCESS)
+            # 👑 TOP USERS (ONLY REAL SUCCESS)
             top_users_pipeline = [
                 {
                     "$match": {
@@ -120,8 +118,8 @@ class CommandHandlers:
             top_users = await db.user_activity.aggregate(top_users_pipeline).to_list(3)
 
             data = {
-                "stats": stats_data,
-                "success": success,
+                "stats": stats,
+                "downloads": downloads,
                 "failed": failed,
                 "avg_time": avg_time,
                 "top_users": top_users
@@ -141,30 +139,35 @@ class CommandHandlers:
                     return f"{x:.2f} {u}"
                 x /= 1024
 
-        downloads = stats.get("total_downloads", 0)
+        downloads = data["downloads"]
         users = stats.get("total_users", 0)
         size = fmt(stats.get("total_bytes_downloaded", 0))
         uploaded = fmt(stats.get("total_bytes_uploaded", 0))
         daily = stats.get("daily_count", 0)
         platforms = stats.get("platform_stats", {})
 
-        success = data["success"]
+        # ✅ SUCCESS = DOWNLOADS
+        success = downloads
+
         failed = data["failed"]
         total_ops = success + failed
         failure_rate = (failed / total_ops * 100) if total_ops else 0
 
         avg_time = f"{data['avg_time']:.2f}s" if data["avg_time"] else "N/A"
 
+        # 📊 Platforms
         platform_text = ""
         if platforms:
             for k,v in sorted(platforms.items(), key=lambda x:x[1], reverse=True)[:5]:
                 pct = (v/downloads*100) if downloads else 0
                 platform_text += f"• {k}: {pct:.1f}%\n"
 
+        # 👑 Top users
         top_users_text = ""
         for u in data["top_users"]:
             top_users_text += f"• <code>{u['_id']}</code>: {u['count']}\n"
 
+        # 🚨 Alerts
         alerts = []
         if failure_rate > 35: alerts.append("Failure Spike")
         if cpu > 85: alerts.append("CPU High")
@@ -173,7 +176,7 @@ class CommandHandlers:
         status = "🚨 " + " | ".join(alerts) if alerts else "🚀 Healthy"
 
         caption = (
-            "📊 <b>UFOload GOD MODE</b>\n\n"
+            "📊 <b>UFOload CLEAN STATS</b>\n\n"
             f"📥 Downloads: <code>{downloads}</code>\n"
             f"📤 Uploads: <code>{downloads}</code>\n"
             f"💾 Downloaded: <code>{size}</code>\n"
@@ -197,7 +200,7 @@ class CommandHandlers:
             caption=caption,
             parse_mode=ParseMode.HTML
         )
-    # ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
+        # ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command with photo and caption"""
