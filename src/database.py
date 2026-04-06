@@ -107,7 +107,6 @@ class UserActivityLogger:
         await self.db.user_activity.create_index([("platform", pymongo.ASCENDING)])
         await self.db.user_activity.create_index([("status", pymongo.ASCENDING)])
         await self.db.user_activity.create_index([("timestamp", pymongo.DESCENDING)])
-        # Added index for global stats
         await self.db.global_stats.create_index("_id")
 
     async def log_download_attempt(self, user_id: int, url: str, platform: str):
@@ -159,13 +158,9 @@ class UserActivityLogger:
 
     async def get_neko_stats(self) -> dict:
         """Retrieve persistent and live statistics for the /neko command"""
-        # Fetch Persistent Global Stats
         db_stats = await self.db.global_stats.find_one({"_id": "totals"}) or {}
-        
-        # Count Total Users
         total_users = await self.db.user_settings.count_documents({})
         
-        # Calculate Daily Stats (Last 24 Hours)
         last_24h = datetime.utcnow() - timedelta(hours=24)
         daily_count = await self.db.user_activity.count_documents({
             "action_type": "download_complete",
@@ -195,13 +190,16 @@ class UserActivityLogger:
         return activity
 
     def _extract_platform(self, url: str) -> str:
+        """✅ FIXED: Categorize URLs for stats, including Spotify and Instagram short links"""
         url_lower = url.lower()
         if "youtube.com" in url_lower or "youtu.be" in url_lower:
             return "youtube"
-        elif "instagram.com" in url_lower:
+        elif "instagram.com" in url_lower or "instagr.am" in url_lower:
             return "instagram"
         elif "tiktok.com" in url_lower:
             return "tiktok"
+        elif "spotify.com" in url_lower or "open.spotify.com" in url_lower:
+            return "spotify"
         elif "facebook.com" in url_lower or "fb.watch" in url_lower:
             return "facebook"
         elif "pinterest.com" in url_lower:
