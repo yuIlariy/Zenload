@@ -4,12 +4,12 @@ from typing import Dict, Any
 LOCALES: Dict[str, Dict[str, str]] = {
     'ru': {
         'welcome': (
-            # Hidden anchor removed to avoid redundant previews
             "<b>UFOload Downloader</b> 📥\n\n"
             "Отправьте ссылку на видео или музыку для скачивания из:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
             "🔴 • YouTube\n"
+            "🟢 • Spotify\n" # ✅ Added Spotify
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -47,6 +47,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Instagram\n"
             "• TikTok\n"
             "• YouTube\n"
+            "• Spotify\n" # ✅ Added Spotify
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
@@ -99,6 +100,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Привет! Используйте команду /zen с ссылкой для загрузки видео или музыки.\n"
             "Примеры:\n"
             "• /zen https://www.instagram.com/p/...\n"
+            "• /zen https://open.spotify.com/track/...\n" # ✅ Added Spotify example
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
         'missing_url': "Пожалуйста, укажите ссылку после команды /zen",
@@ -117,12 +119,12 @@ LOCALES: Dict[str, Dict[str, str]] = {
     },
     'en': {
         'welcome': (
-            # Hidden anchor removed to avoid redundant previews
             "<b>UFOload Downloader</b> 📥\n\n"
             "Send a video or music link to download from:\n"
             "📸 • Instagram\n"
             "🎵 • TikTok\n"
             "🔴 • YouTube\n"
+            "🟢 • Spotify\n" # ✅ Added Spotify
             "🔵 • Facebook\n"
             "📌 • Pinterest\n"
             "🎧 • Yandex Music\n"
@@ -160,6 +162,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "• Instagram\n"
             "• TikTok\n"
             "• YouTube\n"
+            "• Spotify\n" # ✅ Added Spotify
             "• Facebook\n"
             "• Pinterest\n"
             "• Yandex Music\n"
@@ -201,7 +204,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Support bot development!\n\n"
             "Choose support amount in Stars"
         ),
-        'invoice_title': "Support TikTok Bot",
+        'invoice_title': "Support Zenload Bot",
         'invoice_description': "Support bot development with Stars",
         'price_label': "Support (100 Stars)",
         'payment_support': (
@@ -212,6 +215,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "Hi! Use the /zen command with a URL to download videos or music.\n"
             "Examples:\n"
             "• /zen https://www.instagram.com/p/...\n"
+            "• /zen https://open.spotify.com/track/...\n" # ✅ Added Spotify example
             "• /zen https://music.yandex.ru/album/123/track/456"
         ),
         'missing_url': "Please provide a URL after the /zen command",
@@ -239,7 +243,7 @@ class Localization:
         try:
             text = LOCALES.get(lang, LOCALES['en'])[key]
             return text.format(**kwargs) if kwargs else text
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError):
             try:
                 text = LOCALES['en'][key]
                 return text.format(**kwargs) if kwargs else text
