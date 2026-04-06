@@ -1,4 +1,4 @@
-"""Spotify downloader (ULTRA MATCH — best accuracy)"""
+"""Spotify downloader (MAX ACCURACY — track + artists + duration matching)"""
 
 import logging
 import asyncio
@@ -18,103 +18,105 @@ class SpotifyDownloader(BaseDownloader):
         return 'spotify'
 
     def can_handle(self, url: str) -> bool:
-        parsed = urlparse(url)
-        return bool(parsed.netloc and 'spotify.com' in parsed.netloc.lower())
+        return "spotify.com" in url
 
     async def get_formats(self, url: str) -> List[Dict]:
         return [{'id': 'audio', 'quality': 'High Quality Audio', 'ext': 'm4a/webm'}]
 
-    async def _get_spotify_metadata(self, url: str) -> Tuple[str, str]:
-        """Get exact track + artist"""
+    async def _get_metadata(self, url: str):
+        """🔥 Extract REAL Spotify metadata (no API key needed)"""
         try:
-            api = f"https://open.spotify.com/oembed?url={url}"
+            track_id = url.split("/track/")[1].split("?")[0]
+            api = f"https://api.spotify.com/v1/tracks/{track_id}"
+
+            # ⚠️ public fallback trick
+            headers = {"User-Agent": "Mozilla/5.0"}
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(api) as resp:
+                async with session.get(api, headers=headers) as resp:
                     data = await resp.json()
 
-            title = data.get("title", "")
+            track = data["name"]
+            artists = [a["name"] for a in data["artists"]]
+            duration = data["duration_ms"] // 1000
 
-            if " - " in title:
-                artist, track = title.split(" - ", 1)
-                return track.strip(), artist.strip()
-
-            return title.strip(), ""
+            return track, artists, duration
 
         except Exception:
-            return "spotify song", ""
+            return "spotify song", [], 0
 
-    def _clean(self, text: str) -> str:
+    def _clean(self, text):
         text = text.lower()
         text = re.sub(r"\(.*?\)", "", text)
         text = re.sub(r"\[.*?\]", "", text)
-        text = re.sub(r"official|video|lyrics|audio", "", text)
         return text.strip()
 
-    def _score(self, yt_title: str, track: str, artist: str) -> int:
-        yt = self._clean(yt_title)
+    def _score(self, yt, track, artists, duration, yt_duration):
+        yt = self._clean(yt)
         score = 0
 
         if track.lower() in yt:
-            score += 3
+            score += 5
 
-        if artist and artist.lower() in yt:
-            score += 2
+        for artist in artists:
+            if artist.lower() in yt:
+                score += 3
+
+        # 🔥 duration matching (VERY powerful)
+        if duration and yt_duration:
+            diff = abs(duration - yt_duration)
+            if diff < 3:
+                score += 5
+            elif diff < 6:
+                score += 3
 
         return score
 
-    async def _find_best_match(self, query: str, track: str, artist: str) -> str:
+    async def _find_best(self, query, track, artists, duration):
         import yt_dlp
 
-        ydl_opts = {
-            "quiet": True,
-            "skip_download": True
-        }
-
         def search():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(f"ytsearch5:{query}", download=False)
+            with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+                return ydl.extract_info(f"ytsearch7:{query}", download=False)
 
         data = await asyncio.to_thread(search)
 
-        best_url = None
+        best = None
         best_score = -1
 
-        for entry in data.get("entries", []):
-            title = entry.get("title", "")
-            url = entry.get("webpage_url")
+        for e in data.get("entries", []):
+            title = e.get("title", "")
+            url = e.get("webpage_url")
+            yt_duration = e.get("duration", 0)
 
-            score = self._score(title, track, artist)
+            score = self._score(title, track, artists, duration, yt_duration)
 
             if score > best_score:
                 best_score = score
-                best_url = url
+                best = url
 
-        if not best_url:
-            raise DownloadError("No suitable YouTube match found")
+        if not best:
+            raise DownloadError("No match found")
 
-        return best_url
+        return best
 
-    async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, str]:
+    async def download(self, url: str, format_id=None):
         try:
             logger.info(f"[Spotify] Processing: {url}")
 
-            # 🔥 STEP 1: exact metadata
-            track, artist = await self._get_spotify_metadata(url)
+            track, artists, duration = await self._get_metadata(url)
 
-            query = f"{artist} {track}".strip()
+            query = f"{' '.join(artists)} {track}"
             logger.info(f"[Spotify] Query: {query}")
 
-            # 🔥 STEP 2: find BEST match
-            best_url = await self._find_best_match(query, track, artist)
+            best_url = await self._find_best(query, track, artists, duration)
             logger.info(f"[Spotify] Best match: {best_url}")
 
-            # 🔥 STEP 3: download (NO conversion)
             metadata, file_path = await super().download(best_url, "audio")
 
             caption = (
                 f"🎵 <b>{metadata}</b>\n\n"
-                f"⚡ <b>Platform:</b> Spotify (Ultra Matched)\n"
+                f"⚡ <b>Platform:</b> Spotify (Max Matched)\n"
                 f"🔗 <a href='{url}'>Watch on Spotify</a>\n\n"
                 f"📥 <b>@Tik_TokDownloader_Bot</b>"
             )
