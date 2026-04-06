@@ -62,11 +62,14 @@ YTDLP_OPTIONS = {
     },
 
     'spotify': {
-        # ✅ SpotDL specific configurations
-        'format': 'm4a',
-        'bitrate': 'disable',
-        'no_check_certificate': True,
-        'audio_provider': 'youtube-music', # Best for native m4a
+        # ✅ REMOVED SpotDL - Using native yt-dlp audio settings
+        'nooverwrites': True,
+        'no_color': True,
+        'no_warnings': True,
+        'quiet': True,
+        'nocheckcertificate': True,
+        'noplaylist': True,
+        'extract_flat': False, # Needs to be False here to allow the actual download
     },
 
     'facebook': {
@@ -131,7 +134,6 @@ LOGGING_CONFIG = {
             'level': 'INFO',
             'propagate': False
         },
-        'spotdl': {'level': 'INFO', 'handlers': ['console'], 'propagate': False}, # ✅ Track SpotDL
         'telegram': {'level': 'WARNING', 'propagate': False},
         'httpx': {'level': 'WARNING', 'propagate': False},
         'httpcore': {'level': 'WARNING', 'propagate': False},
