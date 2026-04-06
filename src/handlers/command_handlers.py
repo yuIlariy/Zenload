@@ -6,9 +6,10 @@ import platform
 import time
 from datetime import datetime, timedelta
 from typing import Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatMemberStatus
+from telegram.error import Forbidden, RetryAfter, TelegramError
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,35 @@ class CommandHandlers:
         self.ADMIN_ID = 6318135266
         self.LOG_CHANNEL = -1001925329161
         self.UPDATES_CHANNEL_ID = -1002651553501
+
+    # ------------------ FIX: ADMIN CHECK ------------------
+    async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        if update.effective_chat.type in ['group', 'supergroup']:
+            try:
+                member = await context.bot.get_chat_member(
+                    update.effective_chat.id,
+                    update.effective_user.id
+                )
+                return member.status in [
+                    ChatMemberStatus.OWNER,
+                    ChatMemberStatus.ADMINISTRATOR
+                ]
+            except Exception as e:
+                logger.error(f"Admin check failed: {e}")
+                return False
+        return True
+
+    # ------------------ FIX: LOCALIZATION ------------------
+    async def get_message(
+        self,
+        user_id: int,
+        key: str,
+        chat_id: Optional[int] = None,
+        is_admin: bool = False,
+        **kwargs
+    ) -> str:
+        settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
+        return self.localization.get(settings.language, key, **kwargs)
 
     # ------------------ PLATFORM FIX ------------------
     def _extract_platform(self, url: str) -> str:
@@ -43,6 +73,7 @@ class CommandHandlers:
 
         return "unknown"
 
+    # ------------------ SUB CHECK ------------------
     async def _check_subscription(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         user_id = update.effective_user.id
         if user_id == self.ADMIN_ID:
@@ -66,7 +97,7 @@ class CommandHandlers:
         )
         return False
 
-    # ------------------ NEKO GOD POLISHED ------------------
+    # ------------------ NEKO ------------------
     async def neko_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._check_subscription(update, context):
             return
@@ -93,7 +124,6 @@ class CommandHandlers:
                 "status": "failed"
             })
 
-            # AVG TIME
             avg_pipeline = [
                 {"$match": {"action_type": "download_complete", "status": "success"}},
                 {"$group": {"_id": None, "avg": {"$avg": "$processing_time"}}}
@@ -101,7 +131,6 @@ class CommandHandlers:
             avg_res = await db.user_activity.aggregate(avg_pipeline).to_list(1)
             avg_time = avg_res[0]["avg"] if avg_res else 0
 
-            # TOP USERS (CLEAN + ONLY SUCCESS)
             top_users_pipeline = [
                 {
                     "$match": {
@@ -158,29 +187,22 @@ class CommandHandlers:
         daily = stats.get("daily_count", 0)
         platforms = stats.get("platform_stats", {})
 
-        # -------- PLATFORM DISPLAY --------
         platform_text = ""
         if platforms:
             for k, v in sorted(platforms.items(), key=lambda x: x[1], reverse=True)[:5]:
                 pct = (v / downloads * 100) if downloads else 0
                 platform_text += f"• {k.capitalize()}: {pct:.1f}%\n"
 
-        # -------- POLISHED TOP USERS --------
         top_users_text = ""
-
         for u in data["top_users"]:
             uid = u["_id"]
             count = u["count"]
 
-            # Try fetch name
             user_doc = await self.settings_manager.db.user_settings.find_one({"user_id": uid})
             name = user_doc.get("first_name") if user_doc else "User"
 
-            top_users_text += (
-                f"• <a href='tg://user?id={uid}'>{name}</a>: {count}\n"
-            )
+            top_users_text += f"• <a href='tg://user?id={uid}'>{name}</a>: {count}\n"
 
-        # -------- ALERTS --------
         alerts = []
         if failure_rate > 35: alerts.append("Failure Spike")
         if cpu > 85: alerts.append("CPU High")
@@ -190,28 +212,21 @@ class CommandHandlers:
 
         caption = (
             "📊 <b>UFOload GOD MODE</b>\n\n"
-
             f"📥 Downloads: <code>{downloads}</code>\n"
             f"📤 Uploads: <code>{downloads}</code>\n"
             f"💾 Downloaded: <code>{size}</code>\n"
             f"☁️ Uploaded: <code>{uploaded}</code>\n\n"
-
             f"🖥 CPU: <code>{cpu}%</code>\n"
             f"🚀 RAM: <code>{ram.percent}%</code>\n"
             f"⏳ Uptime: <code>{uptime}</code>\n\n"
-
             f"👤 Users: <code>{users}</code>\n"
             f"📈 Daily: <code>{daily}</code>\n\n"
-
             f"📊 Platforms:\n{platform_text or 'None'}\n"
-
             f"⚡ Success: <code>{success}</code>\n"
             f"❌ Failed: <code>{failed}</code>\n"
             f"📉 Failure Rate: <code>{failure_rate:.1f}%</code>\n"
             f"⏱ Avg Time: <code>{avg_time}</code>\n\n"
-
             f"👑 <b>Top Users</b>:\n{top_users_text or 'None'}\n\n"
-
             f"{status}"
         )
 
@@ -220,7 +235,7 @@ class CommandHandlers:
             caption=caption,
             parse_mode=ParseMode.HTML
         )
-# ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
+        # ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command with photo and caption"""
