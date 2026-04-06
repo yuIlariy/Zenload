@@ -5,6 +5,7 @@ import asyncio
 import os
 import shutil
 import sys
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from urllib.parse import urlparse
@@ -16,29 +17,26 @@ logger = logging.getLogger(__name__)
 class SpotifyDownloader(BaseDownloader):
     def __init__(self):
         super().__init__()
-        # ✅ VIRTUAL ENV FIX: Locate spotdl inside the venv bin folder
+        # ✅ VIRTUAL ENV FIX: Find the absolute path for spotdl
         self.spotdl_path = self._find_spotdl()
         self.ffmpeg_path = shutil.which("ffmpeg")
         
         if not self.spotdl_path:
-            logger.error("[Spotify] spotdl binary not found in venv. Run 'pip install spotdl'")
-        if not self.ffmpeg_path:
-            logger.warning("[Spotify] ffmpeg not found globally. Metadata embedding may fail")
+            logger.error("[Spotify] spotdl binary not found!")
 
     def _find_spotdl(self) -> Optional[str]:
-        """Ensures we use the spotdl installed in the virtual environment"""
-        # First check the current Python's bin directory
-        venv_bin = Path(sys.executable).parent
-        spotdl_bin = venv_bin / "spotdl"
-        if spotdl_bin.exists():
-            return str(spotdl_bin)
+        """Locates the spotdl binary relative to the virtual env"""
+        python_bin_dir = Path(sys.executable).parent
+        env_spotdl = python_bin_dir / "spotdl"
+        if env_spotdl.exists():
+            return str(env_spotdl)
         return shutil.which("spotdl")
 
     def platform_id(self) -> str:
         return 'spotify'
 
     def can_handle(self, url: str) -> bool:
-        """Check for Spotify links, including short and desktop variants"""
+        """Check if the URL is a valid Spotify link"""
         parsed = urlparse(url)
         return bool(
             parsed.netloc and 
@@ -49,11 +47,11 @@ class SpotifyDownloader(BaseDownloader):
         return [{'id': 'm4a', 'quality': 'High Quality (M4A)', 'ext': 'm4a'}]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """Download track as native m4a using spotDL subprocess"""
+        """Download track as native m4a without freezing the bot"""
         logger.info(f"[Spotify] Processing: {url}")
         
         if not self.spotdl_path:
-            raise DownloadError("spotdl not found. Ensure it is installed in your virtual env")
+            raise DownloadError("spotdl binary not found.")
 
         download_dir = (Path(__file__).parent.parent.parent / "downloads").resolve()
         download_dir.mkdir(exist_ok=True)
@@ -62,57 +60,56 @@ class SpotifyDownloader(BaseDownloader):
         temp_dir = download_dir / f"spot_{task_id}"
         temp_dir.mkdir(exist_ok=True)
 
-        try:
-            self.update_progress('status_downloading', 10)
-
-            # ✅ THE FIX: Use 'download' command correctly with absolute paths
-            # Removed --no-check-certificate as it caused 'unrecognized arguments'
+        # ✅ THE FIX: Wrap the blocking subprocess in a thread
+        def run_spotdl():
             cmd = [
                 self.spotdl_path, 
                 "download", url,
                 "--output", str(temp_dir),
                 "--format", "m4a",
                 "--bitrate", "disable",
-                "--log-level", "INFO"
+                "--log-level", "ERROR"
             ]
-
-            # ✅ RUN SUBPROCESS
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                # Ensure the subprocess can find global tools like ffmpeg
-                env=os.environ.copy() 
+            
+            # Using synchronous subprocess inside the thread
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True,
+                env=os.environ.copy()
             )
+            return result
 
-            try:
-                # 5-minute timeout to prevent hanging the bot
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
-            except asyncio.TimeoutError:
-                process.kill()
-                raise DownloadError("Download timed out (5 min limit)")
+        try:
+            self.update_progress('status_downloading', 20)
 
-            if process.returncode != 0:
-                err = stderr.decode().strip()
-                logger.error(f"[Spotify] spotDL error: {err}")
-                raise DownloadError(f"SpotDL failed: {err[:100]}")
+            # Move the CPU-heavy work to a thread so the bot stays alive
+            result = await asyncio.to_thread(run_spotdl)
 
-            # ✅ FIND AND MOVE FILE
+            if result.returncode != 0:
+                logger.error(f"[Spotify] spotDL error: {result.stderr}")
+                raise DownloadError(f"SpotDL failed: {result.stderr[:100]}")
+
+            # Find the downloaded file
             files = list(temp_dir.glob("*.m4a"))
             if not files:
-                # Fallback check for any audio file
                 files = list(temp_dir.glob("*.*"))
                 if not files:
-                    raise DownloadError("No file found after spotDL finished")
+                    raise DownloadError("Audio file not found after download")
 
             file_path = files[0]
             track_title = file_path.stem
-            final_path = download_dir / f"{track_title}_{task_id}{file_path.suffix}"
             
+            final_path = download_dir / f"{track_title}_{task_id}{file_path.suffix}"
             shutil.move(str(file_path), str(final_path))
             
-            metadata = self._prepare_metadata(url, track_title)
-            return metadata, final_path
+            caption = (
+                f"🎵 <b>{track_title}</b>\n\n"
+                f"⚡ <b>Platform:</b> Spotify (Native M4A)\n"
+                f"🔗 <a href='{url}'>View on Spotify</a>\n\n"
+                f"📥 <b>@Tik_TokDownloader_Bot</b>"
+            )
+            return caption, final_path
 
         except Exception as e:
             logger.error(f"[Spotify] Download failed: {e}")
@@ -121,12 +118,3 @@ class SpotifyDownloader(BaseDownloader):
         finally:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
-
-    def _prepare_metadata(self, url: str, title: str) -> str:
-        """Standardized Spotify caption"""
-        return (
-            f"🎵 <b>{title}</b>\n\n"
-            f"⚡ <b>Platform:</b> Spotify (Native M4A)\n"
-            f"🔗 <a href='{url}'>View on Spotify</a>\n\n"
-            f"📥 <b>@Tik_TokDownloader_Bot</b>"
-        )
