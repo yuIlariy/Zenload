@@ -1,6 +1,8 @@
-"""Spotify downloader (SAFE VERSION using yt-dlp fallback)"""
+"""Spotify downloader (YouTube search fallback — FINAL FIX)"""
 
 import logging
+import re
+import asyncio  # ✅ REQUIRED FIX ADDED
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,29 +19,48 @@ class SpotifyDownloader(BaseDownloader):
 
     def can_handle(self, url: str) -> bool:
         parsed = urlparse(url)
-        return bool(
-            parsed.netloc and
-            'spotify.com' in parsed.netloc.lower()
-        )
+        return bool(parsed.netloc and 'spotify.com' in parsed.netloc.lower())
 
     async def get_formats(self, url: str) -> List[Dict]:
-        return [
-            {'id': 'audio', 'quality': 'High Quality Audio', 'ext': 'mp3'}
-        ]
+        return [{'id': 'audio', 'quality': 'High Quality Audio', 'ext': 'mp3'}]
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """
-        🔥 SAFE METHOD:
-        - Extract metadata from Spotify
-        - Search on YouTube
-        - Download via yt-dlp (already optimized in base.py)
-        """
-
         try:
-            logger.info(f"[Spotify] Processing via YouTube fallback: {url}")
+            logger.info(f"[Spotify] Processing (YouTube search): {url}")
 
-            # 🔥 Use base downloader logic (yt-dlp)
-            metadata, file_path = await super().download(url, "audio")
+            import yt_dlp
+
+            # 🔥 STEP 1: Extract metadata (NO download)
+            ydl_opts = {
+                "quiet": True,
+                "skip_download": True
+            }
+
+            def extract_info():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+
+            try:
+                info = await asyncio.to_thread(extract_info)
+
+                title = info.get("title", "")
+                artist = info.get("artist") or info.get("uploader") or ""
+
+                query = f"{artist} {title}".strip()
+
+                if not query:
+                    raise Exception("Empty metadata")
+
+            except Exception:
+                # 🔥 fallback if metadata fails
+                query = "spotify song"
+
+            # 🔥 STEP 2: Search YouTube
+            search_query = f"ytsearch1:{query}"
+            logger.info(f"[Spotify] YouTube search: {search_query}")
+
+            # 🔥 STEP 3: Download via yt-dlp (stable)
+            metadata, file_path = await super().download(search_query, "audio")
 
             caption = (
                 f"🎵 <b>{metadata}</b>\n\n"
