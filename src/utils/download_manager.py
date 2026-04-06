@@ -3,7 +3,7 @@ from pathlib import Path
 from telegram import Update, Message
 import asyncio
 import aiohttp
-from typing import Optional
+from typing import Optional, Any
 import time
 from collections import defaultdict
 import inspect
@@ -20,6 +20,7 @@ class DownloadWorker:
     """Handles individual download and upload tasks"""
 
     auth_failure_tracker = defaultdict(int)
+    # Added .m4a specifically for Spotify/High-quality audio
     AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.opus', '.ogg', '.webm'}
 
     def __init__(self, localization, settings_manager, session: aiohttp.ClientSession,
@@ -42,6 +43,7 @@ class DownloadWorker:
         return "█" * filled + "░" * (length - filled)
 
     def format_progress(self, prefix: str, current: int, total: int) -> str:
+        """Calculates and formats speed and ETA"""
         percent = int((current / total) * 100) if total else 0
         bar = self.build_progress_bar(percent)
 
@@ -51,8 +53,8 @@ class DownloadWorker:
         remaining = (total - current) / speed if speed > 0 else 0
 
         return (
-            f"{prefix}\n"
-            f"{bar} {percent}%\n"
+            f"<b>{prefix}</b>\n"
+            f"<code>{bar}</code> {percent}%\n"
             f"⚡ {speed_mb:.2f} MB/s | ⏳ {int(remaining)}s"
         )
 
@@ -61,16 +63,35 @@ class DownloadWorker:
             if time.time() - self._last_update_time < self._update_interval:
                 return
             self._last_update_time = time.time()
-            await self._current_message.edit_text(text)
+            await self._current_message.edit_text(text, parse_mode='HTML')
         except:
             pass
 
     async def upload_progress(self, current, total, *args):
+        """Callback for Pyrogram uploads"""
         try:
             text = self.format_progress("⬆️ Uploading...", current, total)
             await self.update_message(text)
         except:
             pass
+
+    async def _download_progress(self, status: str, progress: Any):
+        """Standardized progress callback for both sync and async downloaders"""
+        if not self._start_time:
+            self._start_time = time.time()
+
+        # Handle both percentage (int) and detailed data (dict)
+        if isinstance(progress, dict):
+            current = progress.get('downloaded_bytes', 0)
+            total = progress.get('total_bytes', 0) or progress.get('total_bytes_estimate', 0)
+            if total > 0:
+                text = self.format_progress("⬇️ Downloading...", current, total)
+            else:
+                text = f"⬇️ Downloading...\n{status}"
+        else:
+            text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
+            
+        await self.update_message(text)
 
     async def process_download(self, downloader, url: str, update: Update,
                                status_message: Message, format_id: str = None):
@@ -88,8 +109,9 @@ class DownloadWorker:
             downloader.set_progress_callback(self._download_progress)
 
             await self.update_message("⬇️ Starting download...")
+            self._start_time = time.time() # Start timer for speed calc
 
-            # ✅ SMART FIX: detect async vs sync downloader
+            # ✅ Detect async vs sync downloader (Supports Spotify, TikTok, Instagram)
             download_func = downloader.download
 
             if inspect.iscoroutinefunction(download_func):
@@ -101,35 +123,31 @@ class DownloadWorker:
                     lambda: download_func(url, format_id)
                 )
 
-            # ---- metadata trim ----
+            if not file_path or not Path(file_path).exists():
+                raise Exception("File not found after download task.")
+
+            # ---- Metadata Trimming for Telegram Limits ----
             if metadata:
-                parts = metadata.split('\n\n')
-                if len(parts) >= 3:
-                    footer = '\n\n'.join(parts[-2:])
-                    header = '\n\n'.join(parts[:-2])
-                    header_lines = header.split('\n')
-                    if len(header_lines) > 3:
-                        header = '\n'.join(header_lines[:3]) + "..."
-                    if len(header) > 800:
-                        header = header[:797] + "..."
-                    metadata = f"{header}\n\n{footer}"
-                elif len(metadata) > 900:
+                if len(metadata) > 900:
                     metadata = metadata[:897] + "..."
 
             file_path_obj = Path(file_path)
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
+            # Reset timer for accurate upload speed
             self._start_time = time.time()
 
+            # Spotify/M4A detection logic
             is_audio = (
-                format_id == "audio" or
+                format_id == "audio" or 
+                downloader.platform_id() == 'spotify' or
                 file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS
             )
 
-            # ---- SMALL FILE ----
+            # ---- UPLOAD LOGIC ----
             if file_size < 50 * 1024 * 1024:
-                await self.update_message("⬆️ Uploading to Telegram...\n(Fast mode)")
+                await self.update_message("⬆️ Uploading to Telegram...")
 
                 with open(file_path, 'rb') as file:
                     if is_audio:
@@ -146,9 +164,8 @@ class DownloadWorker:
                             supports_streaming=True
                         )
 
-            # ---- LARGE FILE ----
             else:
-                await self.update_message("⬆️ Uploading large file...")
+                await self.update_message("⬆️ Preparing large upload...")
 
                 try:
                     if is_audio:
@@ -160,19 +177,19 @@ class DownloadWorker:
                                 progress=self.upload_progress,
                                 parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600
+                            timeout=900 # Increased timeout for large M4A/Videos
                         )
                     else:
                         sent_media = await asyncio.wait_for(
                             self.pyro_client.send_video(
                                 chat_id=chat_id,
-                                video=str(file_path),
+                                audio=str(file_path),
                                 caption=metadata,
                                 supports_streaming=True,
                                 progress=self.upload_progress,
                                 parse_mode=PyroParseMode.HTML
                             ),
-                            timeout=600
+                            timeout=900
                         )
                 except asyncio.TimeoutError:
                     await self.update_message("❌ Upload timed out.")
@@ -189,7 +206,7 @@ class DownloadWorker:
 
         except Exception as e:
             logger.error(f"Download error: {e}", exc_info=True)
-            await update.effective_message.reply_text("❌ Download failed.")
+            await update.effective_message.reply_text(f"❌ Download failed: {str(e)}")
 
         finally:
             if self.activity_logger:
@@ -206,23 +223,14 @@ class DownloadWorker:
                 )
 
             if file_path:
-                try:
-                    Path(file_path).unlink()
-                except:
-                    pass
-
-            try:
-                await status_message.delete()
-            except:
-                pass
-
-    async def _download_progress(self, status: str, progress: int):
-        text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
-        await self.update_message(text)
+                try: Path(file_path).unlink()
+                except: pass
+            try: await status_message.delete()
+            except: pass
 
 
 class DownloadManager:
-    """Manages download sessions"""
+    """Manages download sessions with a concurrency semaphore"""
 
     def __init__(self, localization, settings_manager,
                  max_concurrent_downloads=10, activity_logger=None):
@@ -233,7 +241,7 @@ class DownloadManager:
         self.activity_logger = activity_logger
         self.pyro_client = None
 
-        # ✅ Prevent overload
+        # ✅ Prevent server overload
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
