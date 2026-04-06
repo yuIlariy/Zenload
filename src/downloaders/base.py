@@ -34,17 +34,16 @@ class BaseDownloader(ABC):
             return
 
         now = self._loop.time()
-        # Increase throttle to 2 seconds to be safe
+        # 2-second throttle is good for Telegram bots to prevent flood/freeze
         if now - self._last_progress_time < 2:
             return
 
         self._last_progress_time = now
         
-        # FIXED: Safer thread-safe scheduling
-        self._loop.call_soon_threadsafe(
-            lambda: asyncio.run_coroutine_threadsafe(
-                self._progress_callback(status, progress), self._loop
-            )
+        # ✅ FIXED: Use run_coroutine_threadsafe ALONE. 
+        # Do not nest it inside call_soon_threadsafe.
+        asyncio.run_coroutine_threadsafe(
+            self._progress_callback(status, progress), self._loop
         )
 
     def _progress_hook(self, d: Dict[str, Any]):
@@ -71,7 +70,6 @@ class BaseDownloader(ABC):
             current_opts = self.ydl_opts.copy()
             temp_filename = f"zen_{self.platform_id()}_{os.urandom(4).hex()}"
             
-            # FIXED: Absolute pathing to avoid globbing the whole directory
             save_path = DOWNLOADS_DIR / temp_filename
             current_opts.update({
                 'outtmpl': f"{str(save_path)}.%(ext)s",
@@ -79,6 +77,7 @@ class BaseDownloader(ABC):
                 'nocheckcertificate': True,
                 'quiet': True,
                 'no_warnings': True,
+                'extract_flat': False, # Ensure we actually get the file for download
             })
 
             # Format Logic
@@ -88,27 +87,29 @@ class BaseDownloader(ABC):
                 current_opts['format'] = f"{format_id}+bestaudio/best"
 
             def _do_download():
+                # Re-initializing here ensures no thread-leakage
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
-                    # extract_info is the heavy lifter
                     return ydl.extract_info(url, download=True)
 
-            # Execute in thread
+            # Move heavy blocking network/IO to thread
             info = await asyncio.to_thread(_do_download)
 
-            # FIXED: Direct file check instead of .glob (much faster)
-            # yt-dlp provides the actual file path in the info dict
-            file_path = Path(info.get('requested_downloads', [{}])[0].get('filepath', ''))
-            
-            if not file_path.exists():
-                # Fallback only if requested_downloads fails
-                for ext in ['m4a', 'webm', 'mp3', 'mp4']:
+            # ✅ FIXED: Improved path finding
+            file_path = None
+            req_dl = info.get('requested_downloads', [])
+            if req_dl:
+                file_path = Path(req_dl[0].get('filepath', ''))
+
+            if not file_path or not file_path.exists():
+                # Fallback search limited strictly to the unique temp_filename
+                for ext in ['m4a', 'webm', 'mp3', 'mp4', 'mkv']:
                     fallback = DOWNLOADS_DIR / f"{temp_filename}.{ext}"
                     if fallback.exists():
                         file_path = fallback
                         break
 
-            if not file_path.exists():
-                raise DownloadError("Downloaded file disappeared or failed.")
+            if not file_path or not file_path.exists():
+                raise DownloadError("Download finished but file not found on disk.")
 
             return self.format_metadata(info), file_path
 
