@@ -8,6 +8,7 @@ import time
 from collections import defaultdict
 import inspect
 import pyrogram
+from html import escape  # ✅ FIX ADDED
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -94,8 +95,6 @@ class DownloadWorker:
 
         file_path = None
         sent_media = None
-        start_process_time = time.time()
-        user_id = update.effective_user.id
         is_audio = False
 
         try:
@@ -119,7 +118,10 @@ class DownloadWorker:
             if not file_path or not Path(file_path).exists():
                 raise Exception("File not found after download task.")
 
-            if metadata and len(metadata) > 900:
+            # ✅ FIX: sanitize metadata
+            metadata = escape(metadata)
+
+            if len(metadata) > 900:
                 metadata = metadata[:897] + "..."
 
             file_path_obj = Path(file_path)
@@ -155,7 +157,6 @@ class DownloadWorker:
             else:
                 await self.update_message("⬆️ Uploading large file...")
 
-                # ✅ FIXED (NO WRONG ARGUMENTS)
                 if is_audio:
                     sent_media = await asyncio.wait_for(
                         self.pyro_client.send_audio(
