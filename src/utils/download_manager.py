@@ -34,10 +34,7 @@ class DownloadWorker:
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
         self._last_update_time = 0
-
-        # 🔥 FIX: slower updates (prevents Telegram flood)
         self._update_interval = 5.0
-
         self._start_time = None
 
     def build_progress_bar(self, percent: int, length: int = 12) -> str:
@@ -61,13 +58,10 @@ class DownloadWorker:
 
     async def update_message(self, text: str):
         try:
-            # 🔥 HARD THROTTLE (critical fix)
             if time.time() - self._last_update_time < self._update_interval:
                 return
-
             self._last_update_time = time.time()
             await self._current_message.edit_text(text, parse_mode='HTML')
-
         except:
             pass
 
@@ -106,8 +100,6 @@ class DownloadWorker:
 
         try:
             self._current_message = status_message
-            self._current_user_id = user_id
-
             downloader.set_progress_callback(self._download_progress)
 
             await self.update_message("⬇️ Starting download...")
@@ -163,19 +155,30 @@ class DownloadWorker:
             else:
                 await self.update_message("⬆️ Uploading large file...")
 
-                send_func = self.pyro_client.send_audio if is_audio else self.pyro_client.send_video
-
-                sent_media = await asyncio.wait_for(
-                    send_func(
-                        chat_id=chat_id,
-                        audio=str(file_path) if is_audio else None,
-                        video=str(file_path) if not is_audio else None,
-                        caption=metadata,
-                        progress=self.upload_progress,
-                        parse_mode=PyroParseMode.HTML
-                    ),
-                    timeout=900
-                )
+                # ✅ FIXED (NO WRONG ARGUMENTS)
+                if is_audio:
+                    sent_media = await asyncio.wait_for(
+                        self.pyro_client.send_audio(
+                            chat_id=chat_id,
+                            audio=str(file_path),
+                            caption=metadata,
+                            progress=self.upload_progress,
+                            parse_mode=PyroParseMode.HTML
+                        ),
+                        timeout=900
+                    )
+                else:
+                    sent_media = await asyncio.wait_for(
+                        self.pyro_client.send_video(
+                            chat_id=chat_id,
+                            video=str(file_path),
+                            caption=metadata,
+                            supports_streaming=True,
+                            progress=self.upload_progress,
+                            parse_mode=PyroParseMode.HTML
+                        ),
+                        timeout=900
+                    )
 
             await self.update_message("✅ Done!")
 
@@ -192,7 +195,6 @@ class DownloadWorker:
 
 
 class DownloadManager:
-    """Manages download sessions with strict concurrency control"""
 
     def __init__(self, localization, settings_manager,
                  max_concurrent_downloads=3, activity_logger=None):
@@ -203,7 +205,6 @@ class DownloadManager:
         self.activity_logger = activity_logger
         self.pyro_client = None
 
-        # 🔥 CRITICAL FIX: lower concurrency
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
