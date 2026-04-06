@@ -20,18 +20,19 @@ if TOKEN is None:
 # Platform specific configurations
 YTDLP_OPTIONS = {
     'instagram': {
-        'format': 'best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'ignoreerrors': False,
         'cookiefile': str(COOKIES_DIR / 'instagram.txt'),
         'quiet': True,
-        'no_check_certificate': True
+        'no_check_certificate': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
     },
 
     'tiktok': {
-        'format': 'best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -41,7 +42,6 @@ YTDLP_OPTIONS = {
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
         },
         'extractor_args': {
             'TikTok': {
@@ -51,18 +51,25 @@ YTDLP_OPTIONS = {
         'no_check_certificate': True
     },
 
-    # 🔥 FIXED: REMOVE format completely for YouTube
     'youtube': {
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'ignoreerrors': False,
         'quiet': True,
-        'cookiefile': str(COOKIES_DIR / 'youtube.txt')
+        'cookiefile': str(COOKIES_DIR / 'youtube.txt'),
+        'nocheckcertificate': True
+    },
+
+    'spotify': {
+        # ✅ SpotDL specific configurations
+        'format': 'm4a',
+        'bitrate': 'disable',
+        'no_check_certificate': True,
+        'audio_provider': 'youtube-music', # Best for native m4a
     },
 
     'facebook': {
-        'format': 'best',
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -110,7 +117,7 @@ LOGGING_CONFIG = {
     },
     'loggers': {
         'src': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False
         },
@@ -124,6 +131,7 @@ LOGGING_CONFIG = {
             'level': 'INFO',
             'propagate': False
         },
+        'spotdl': {'level': 'INFO', 'handlers': ['console'], 'propagate': False}, # ✅ Track SpotDL
         'telegram': {'level': 'WARNING', 'propagate': False},
         'httpx': {'level': 'WARNING', 'propagate': False},
         'httpcore': {'level': 'WARNING', 'propagate': False},
