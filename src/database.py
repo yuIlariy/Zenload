@@ -62,12 +62,12 @@ class UserActivityLogger:
             return
 
         text = (
-            "🚀 <u><b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ</b></u>\n\n"
-            f"📜 User: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
-            f"🆔 ID: <code>{user.id}</code>\n"
-            f"👤 UN: @{user.username if user.username else 'None'}\n\n"
-            f"🗓 DATE: {datetime.now().strftime('%d %B, %Y')}\n"
-            f"⏰ TIME: {datetime.now().strftime('%I:%M:%S %p')}"
+            "🚀 <u><b>Nᴇᴡ Uꜱᴇʀ Sᴛᴀʀᴛᴇᴅ Tʜᴇ Bᴏᴛ</b></u>\n\n"
+            f"📜 Uꜱᴇʀ: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
+            f"🆔 Iᴅ: <code>{user.id}</code>\n"
+            f"👤 Uɴ: @{user.username if user.username else 'None'}\n\n"
+            f"🗓 Dᴀᴛᴇ: {datetime.now().strftime('%d %B, %Y')}\n"
+            f"⏰ Tɪᴍᴇ: {datetime.now().strftime('%I:%M:%S %p')}"
         )
 
         try:
