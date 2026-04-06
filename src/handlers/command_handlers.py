@@ -23,7 +23,6 @@ class CommandHandlers:
         self.LOG_CHANNEL = -1001925329161
         self.UPDATES_CHANNEL_ID = -1002651553501
 
-    # ------------------ FIX: ADMIN CHECK ------------------
     async def _is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if update.effective_chat.type in ['group', 'supergroup']:
             try:
@@ -40,7 +39,6 @@ class CommandHandlers:
                 return False
         return True
 
-    # ------------------ FIX: LOCALIZATION ------------------
     async def get_message(
         self,
         user_id: int,
@@ -52,7 +50,6 @@ class CommandHandlers:
         settings = await self.settings_manager.get_settings(user_id, chat_id, is_admin)
         return self.localization.get(settings.language, key, **kwargs)
 
-    # ------------------ PLATFORM FIX ------------------
     def _extract_platform(self, url: str) -> str:
         url = url.lower()
 
@@ -73,7 +70,6 @@ class CommandHandlers:
 
         return "unknown"
 
-    # ------------------ SUB CHECK ------------------
     async def _check_subscription(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         user_id = update.effective_user.id
         if user_id == self.ADMIN_ID:
@@ -97,7 +93,6 @@ class CommandHandlers:
         )
         return False
 
-    # ------------------ NEKO ------------------
     async def neko_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._check_subscription(update, context):
             return
@@ -193,15 +188,27 @@ class CommandHandlers:
                 pct = (v / downloads * 100) if downloads else 0
                 platform_text += f"• {k.capitalize()}: {pct:.1f}%\n"
 
+        # 🔥 FIXED TOP USERS (YOUR EXACT REQUIREMENT)
         top_users_text = ""
         for u in data["top_users"]:
             uid = u["_id"]
             count = u["count"]
 
             user_doc = await self.settings_manager.db.user_settings.find_one({"user_id": uid})
-            name = user_doc.get("first_name") if user_doc else "User"
 
-            top_users_text += f"• <a href='tg://user?id={uid}'>{name}</a>: {count}\n"
+            if user_doc:
+                first_name = user_doc.get("first_name", "User")
+                username = user_doc.get("username")
+
+                if username:
+                    link = f"https://t.me/{username}"
+                else:
+                    link = f"tg://user?id={uid}"
+            else:
+                first_name = "User"
+                link = f"tg://user?id={uid}"
+
+            top_users_text += f"• <a href='{link}'>{first_name}</a>: {count}\n"
 
         alerts = []
         if failure_rate > 35: alerts.append("Failure Spike")
