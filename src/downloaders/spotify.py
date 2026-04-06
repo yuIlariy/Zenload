@@ -62,7 +62,7 @@ class SpotifyDownloader(BaseDownloader):
             "--output", str(temp_dir),
             "--format", "m4a",
             "--bitrate", "disable",
-            "--log-level", "INFO"  # IMPORTANT: allow progress output
+            "--log-level", "INFO"
         ]
 
         try:
@@ -77,18 +77,27 @@ class SpotifyDownloader(BaseDownloader):
 
             progress = 10
 
-            # ✅ Read output LIVE (prevents freezing)
             while True:
-                line = await process.stdout.readline()
+                try:
+                    # ✅ timeout prevents freeze
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=2)
+                except asyncio.TimeoutError:
+                    # still running but no output
+                    if process.returncode is not None:
+                        break
+
+                    if progress < 90:
+                        progress += 1
+                        self.update_progress('status_downloading', progress)
+
+                    continue
+
                 if not line:
                     break
 
                 line = line.decode().strip()
-
-                # OPTIONAL: log for debugging
                 logger.debug(f"[Spotify] {line}")
 
-                # 🔥 Simple fake progress increase (since spotdl has no clean %)
                 if progress < 90:
                     progress += 2
                     self.update_progress('status_downloading', progress)
@@ -98,7 +107,7 @@ class SpotifyDownloader(BaseDownloader):
             if process.returncode != 0:
                 raise DownloadError("SpotDL failed during execution")
 
-            # ✅ Find file
+            # ✅ Find downloaded file
             files = list(temp_dir.glob("*.m4a"))
             if not files:
                 files = list(temp_dir.glob("*.*"))
