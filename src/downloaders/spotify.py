@@ -1,21 +1,21 @@
-"""Spotify downloader (FIXED — Non-blocking search)"""
+"""Spotify downloader (FINAL — Non-blocking search)"""
 
 import logging
 import asyncio
 import aiohttp
 import re
-import yt_dlp  # FIXED: Moved to top to prevent import-lag
+import yt_dlp
 from urllib.parse import urlparse
 
 from .base import BaseDownloader, DownloadError
 
 logger = logging.getLogger(__name__)
 
-# FIXED: Pre-define options for faster initialization
-YDL_OPTS = {
+# GLOBAL OPTIONS: Optimized for speed and event-loop safety
+SEARCH_OPTS = {
     "quiet": True,
     "no_warnings": True,
-    "extract_flat": "in_playlist",  # Much faster for search results
+    "extract_flat": True,  # CRITICAL: prevents deep-scraping each search result
     "skip_download": True,
 }
 
@@ -25,6 +25,7 @@ class SpotifyDownloader(BaseDownloader):
         return 'spotify'
 
     def can_handle(self, url: str):
+        # Specific check for your proxied/custom Spotify URL format
         return "spotify.com" in url
 
     async def get_formats(self, url):
@@ -77,20 +78,25 @@ class SpotifyDownloader(BaseDownloader):
         return score
 
     async def _find_best(self, query, track, artist):
-        # FIXED: Using a reusable function to offload to thread
+        # Runs inside a thread to keep the main bot loop free
         def search():
-            with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            # Fresh instance inside thread avoids state-sharing locks
+            with yt_dlp.YoutubeDL(SEARCH_OPTS) as ydl:
                 return ydl.extract_info(f"ytsearch10:{query}", download=False)
 
-        # Offload the heavy 10-video search to a background thread
+        # Offload the heavy 10-video network lookup
         data = await asyncio.to_thread(search)
 
         best = None
         best_score = -999
 
         for e in data.get("entries", []):
+            if not e:
+                continue
+                
             title = e.get("title", "")
-            url = e.get("url") or e.get("webpage_url") # extract_flat uses 'url'
+            # With extract_flat: True, 'url' is the direct link
+            url = e.get("url") or e.get("webpage_url")
 
             score = self._score(title, track, artist)
 
@@ -99,7 +105,7 @@ class SpotifyDownloader(BaseDownloader):
                 best = url
 
         if not best:
-            raise DownloadError("No match found")
+            raise DownloadError("No match found for this Spotify track")
 
         return best
 
@@ -120,11 +126,11 @@ class SpotifyDownloader(BaseDownloader):
 
             logger.info(f"[Spotify] Query: {query}")
 
+            # Find the best match on YouTube (non-blocking)
             best_url = await self._find_best(query, track, artist)
             logger.info(f"[Spotify] Best match: {best_url}")
 
-            # NOTE: If the bot still freezes here, the issue is in BaseDownloader.download
-            # Ensure the parent download method is also fully async.
+            # Call parent download (BaseDownloader must use run_coroutine_threadsafe for progress)
             metadata, file_path = await super().download(best_url, "audio")
 
             short_metadata = self._shorten(metadata, 70)
