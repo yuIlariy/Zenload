@@ -24,8 +24,6 @@ class BaseDownloader(ABC):
 
         self._progress_callback = None
         self._loop = None
-
-        # Throttle progress updates to prevent UI/Event loop congestion
         self._last_progress_time = 0
 
     def set_progress_callback(self, callback: Callable[[str, Any], None]):
@@ -36,22 +34,23 @@ class BaseDownloader(ABC):
             self._loop = None
 
     def update_progress(self, status: str, progress: Any):
-        if not self._progress_callback or not self._loop:
+        # ✅ FIX 1: Ensure loop and callback exist and are valid
+        if not self._progress_callback or not self._loop or not self._loop.is_running():
             return
 
         now = self._loop.time()
-
-        # 2-second throttle is the "sweet spot" for Telegram bots
-        if now - self._last_progress_time < 2:
+        # ✅ FIX 2: Increased throttle. Telegram bots often lag if updated every 2s.
+        if now - self._last_progress_time < 3:
             return
 
         self._last_progress_time = now
 
-        # ✅ FIXED: Use run_coroutine_threadsafe ALONE.
-        # Nesting inside call_soon_threadsafe causes deadlocks in some async environments.
-        asyncio.run_coroutine_threadsafe(
-            self._progress_callback(status, progress), self._loop
-        )
+        # ✅ FIX 3: Use call_soon_threadsafe to schedule the coroutine creation.
+        # This prevents the background thread from ever "waiting" on the loop.
+        def schedule_task():
+            asyncio.create_task(self._progress_callback(status, progress))
+
+        self._loop.call_soon_threadsafe(schedule_task)
 
     def _progress_hook(self, d: Dict[str, Any]):
         if d['status'] == 'downloading':
@@ -84,6 +83,7 @@ class BaseDownloader(ABC):
                 'nocheckcertificate': True,
                 'quiet': True,
                 'no_warnings': True,
+                'logger': None,  # ✅ FIX 4: Explicitly disable internal logger to prevent GIL hangs
             })
 
             # Format Logic
@@ -93,14 +93,16 @@ class BaseDownloader(ABC):
                 current_opts['format'] = f"{format_id}+bestaudio/best"
 
             def _do_download():
-                # Re-initializing context inside the thread prevents cross-thread state corruption
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
-            # Move heavy blocking network/IO to a separate thread
+            # ✅ FIX 5: Use a proper thread offload
             info = await asyncio.to_thread(_do_download)
 
-            # ✅ FIXED: Direct file check logic
+            if not info:
+                raise DownloadError("Failed to extract information from URL")
+
+            # Direct file check logic
             file_path = None
             req_dl = info.get('requested_downloads', [])
             
@@ -121,5 +123,5 @@ class BaseDownloader(ABC):
             return self.format_metadata(info), file_path
 
         except Exception as e:
-            logger.error(f"Download failed for {url}: {str(e)}", exc_info=True)
-            raise DownloadError(f"Critical Download Error: {str(e)}")
+            logger.error(f"Download failed: {str(e)}", exc_info=True)
+            raise DownloadError(f"Download Error: {str(e)}")
