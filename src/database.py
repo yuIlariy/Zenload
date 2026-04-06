@@ -60,12 +60,10 @@ class UserActivityLogger:
         self.LOG_CHANNEL = -1001925329161 
 
     async def log_new_user(self, user):
-        """Send formatted 'New User' log with clickable bot mention"""
         if not self.bot or not self.LOG_CHANNEL:
             return
 
         try:
-            # Safe bot info fetch
             bot_name = "Bot"
             bot_username = None
 
@@ -104,29 +102,72 @@ class UserActivityLogger:
         except Exception as e:
             logger.error(f"Failed to send new user log to channel: {e}")
 
-    async def log_media_transfer(self, message, user_id: int, url: str):
-        """Forward media to log channel and provide the original link"""
+    async def log_media_transfer(
+        self,
+        message,
+        user_id: int,
+        url: str,
+        success: bool = True,
+        file_size: int = None,
+        processing_time: float = None
+    ):
+        """Forward media to log channel with rich metadata"""
         if not self.bot or not self.LOG_CHANNEL or not message:
             return
 
         try:
             await message.forward(chat_id=self.LOG_CHANNEL)
-            
+
+            # 👤 User mention
+            try:
+                name = message.from_user.first_name or "User"
+                user_mention = f"<a href='tg://user?id={user_id}'>{name}</a>"
+            except Exception:
+                user_mention = f"<code>{user_id}</code>"
+
+            # 🌐 Platform
+            platform = self._extract_platform(url).capitalize()
+
+            # 📦 Size formatter
+            def format_size(size):
+                if not size:
+                    return "N/A"
+                for unit in ["B", "KB", "MB", "GB"]:
+                    if size < 1024:
+                        return f"{size:.1f} {unit}"
+                    size /= 1024
+                return f"{size:.1f} TB"
+
+            size_text = format_size(file_size)
+
+            # ⚡ Status
+            status = "✅ Success" if success else "❌ Failed"
+
+            # ⏱ Time
+            time_text = f"{processing_time:.2f}s" if processing_time else "N/A"
+
             log_metadata = (
-                f"🍺 <b>Source Link:</b> {url}\n\n"
-                f"📜 <b>User ID:</b> <code>{user_id}</code>"
+                f"🍺 <b>Download Log</b>\n\n"
+                f"🔗 <b>Source:</b> {url}\n\n"
+                f"👤 <b>User:</b> {user_mention}\n"
+                f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+                f"🌐 <b>Platform:</b> {platform}\n\n"
+                f"📦 <b>Size:</b> {size_text}\n"
+                f"⚡ <b>Status:</b> {status}\n"
+                f"⏱ <b>Time:</b> {time_text}"
             )
+
             await self.bot.send_message(
                 chat_id=self.LOG_CHANNEL,
                 text=log_metadata,
-                parse_mode='HTML',
+                parse_mode="HTML",
                 disable_web_page_preview=True
             )
+
         except Exception as e:
             logger.error(f"Failed to forward media to log channel: {e}")
 
     async def setup_indexes(self):
-        """Initialize MongoDB collection and indexes asynchronously"""
         await self.db.user_activity.create_index([("user_id", pymongo.ASCENDING), ("timestamp", pymongo.DESCENDING)])
         await self.db.user_activity.create_index([("platform", pymongo.ASCENDING)])
         await self.db.user_activity.create_index([("status", pymongo.ASCENDING)])
@@ -147,7 +188,6 @@ class UserActivityLogger:
     async def log_download_complete(self, user_id: int, url: str, success: bool,
                             file_type: str = None, file_size: int = None,
                             processing_time: float = None, error: str = None):
-        """Log download and update persistent global metrics"""
         platform = self._extract_platform(url)
         activity = UserActivity(
             user_id=user_id,
@@ -180,7 +220,6 @@ class UserActivityLogger:
         return activity
 
     async def get_neko_stats(self) -> dict:
-        """Retrieve persistent and live statistics for the /neko command"""
         db_stats = await self.db.global_stats.find_one({"_id": "totals"}) or {}
         total_users = await self.db.user_settings.count_documents({})
         
@@ -213,7 +252,6 @@ class UserActivityLogger:
         return activity
 
     def _extract_platform(self, url: str) -> str:
-        """Categorize URLs for stats"""
         url_lower = url.lower()
         if "youtube.com" in url_lower or "youtu.be" in url_lower:
             return "youtube"
