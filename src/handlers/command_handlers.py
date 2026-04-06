@@ -1,3 +1,4 @@
+#NAm Bot Builder 🍺
 import logging
 import asyncio
 import psutil
@@ -60,7 +61,7 @@ class CommandHandlers:
         return self.localization.get(settings.language, key, **kwargs)
 
     async def neko_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """🔥 FULL GOD MODE (NO FEATURE REMOVED)"""
+        """🔥 GOD MODE (REAL ACCURATE STATS FIXED)"""
         if not await self._check_subscription(update, context):
             return
 
@@ -79,9 +80,18 @@ class CommandHandlers:
             stats_data = await activity_logger.get_neko_stats()
             db = self.settings_manager.db
 
-            success = await db.user_activity.count_documents({"action_type": "download_complete", "status": "success"})
-            failed = await db.user_activity.count_documents({"action_type": "download_complete", "status": "failed"})
+            # ✅ REAL COUNTS
+            success = await db.user_activity.count_documents({
+                "action_type": "download_complete",
+                "status": "success"
+            })
 
+            failed = await db.user_activity.count_documents({
+                "action_type": "download_complete",
+                "status": "failed"
+            })
+
+            # ✅ REAL AVG TIME
             avg_pipeline = [
                 {"$match": {"action_type": "download_complete", "status": "success"}},
                 {"$group": {"_id": None, "avg": {"$avg": "$processing_time"}}}
@@ -89,11 +99,24 @@ class CommandHandlers:
             avg_res = await db.user_activity.aggregate(avg_pipeline).to_list(1)
             avg_time = avg_res[0]["avg"] if avg_res else 0
 
+            # ✅ FIXED TOP USERS (ONLY SUCCESS)
             top_users_pipeline = [
-                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {
+                    "$match": {
+                        "action_type": "download_complete",
+                        "status": "success"
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$user_id",
+                        "count": {"$sum": 1}
+                    }
+                },
                 {"$sort": {"count": -1}},
                 {"$limit": 3}
             ]
+
             top_users = await db.user_activity.aggregate(top_users_pipeline).to_list(3)
 
             data = {
@@ -114,7 +137,8 @@ class CommandHandlers:
 
         def fmt(x):
             for u in ["B","KB","MB","GB","TB"]:
-                if x < 1024: return f"{x:.2f} {u}"
+                if x < 1024:
+                    return f"{x:.2f} {u}"
                 x /= 1024
 
         downloads = stats.get("total_downloads", 0)
@@ -173,7 +197,6 @@ class CommandHandlers:
             caption=caption,
             parse_mode=ParseMode.HTML
         )
-
     # ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
