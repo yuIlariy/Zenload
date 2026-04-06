@@ -102,6 +102,7 @@ class DownloadWorker:
         file_path = None
         sent_media = None
         is_audio = False
+        error_msg = None
 
         try:
             self._current_message = status_message
@@ -185,7 +186,16 @@ class DownloadWorker:
             self._last_update_time = 0 # Force the final message update
             await self.update_message("✅ <b>Finished!</b>")
 
+            # ✅ RESTORED: Log media transfer to the log channel
+            if self.activity_logger and sent_media:
+                await self.activity_logger.log_media_transfer(
+                    message=sent_media,
+                    user_id=update.effective_user.id,
+                    url=url
+                )
+
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Download manager error: {e}", exc_info=True)
             try:
                 await update.effective_message.reply_text(f"❌ <b>Download failed:</b>\n<code>{str(e)}</code>", parse_mode='HTML')
@@ -193,6 +203,21 @@ class DownloadWorker:
                 pass
 
         finally:
+            # ✅ RESTORED: Log download completion for /neko stats
+            if self.activity_logger:
+                total_duration = time.time() - self._start_time if self._start_time else 0
+                actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
+
+                await self.activity_logger.log_download_complete(
+                    user_id=update.effective_user.id,
+                    url=url,
+                    success=(sent_media is not None),
+                    file_type="audio" if is_audio else "video",
+                    file_size=actual_size,
+                    processing_time=total_duration,
+                    error=error_msg
+                )
+
             # Always delete temp files
             if file_path and Path(file_path).exists():
                 try: Path(file_path).unlink()
