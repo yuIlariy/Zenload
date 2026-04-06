@@ -4,6 +4,7 @@ import logging
 import asyncio
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from urllib.parse import urlparse
@@ -15,10 +16,30 @@ logger = logging.getLogger(__name__)
 class SpotifyDownloader(BaseDownloader):
     def __init__(self):
         super().__init__()
-        # Check if ffmpeg is available as it's required for spotDL
+        # ✅ VIRTUAL ENV FIX: Look for spotdl in the same bin/Scripts folder as python
+        self.spotdl_path = self._find_spotdl()
         self.ffmpeg_path = shutil.which("ffmpeg")
+        
+        if not self.spotdl_path:
+            logger.error("[Spotify] spotdl not found in virtual env or PATH")
         if not self.ffmpeg_path:
-            logger.error("[Spotify] ffmpeg not found! Downloads will fail.")
+            logger.error("[Spotify] ffmpeg not found! Ensure it is installed on the system")
+
+    def _find_spotdl(self) -> Optional[str]:
+        """Locates the spotdl binary relative to the virtual env"""
+        # 1. Try standard shutil search
+        path = shutil.which("spotdl")
+        if path:
+            return path
+            
+        # 2. Look in the current Python interpreter's directory
+        python_bin_dir = Path(sys.executable).parent
+        env_spotdl = python_bin_dir / "spotdl"
+        
+        if env_spotdl.exists():
+            return str(env_spotdl)
+            
+        return None
 
     def platform_id(self) -> str:
         return 'spotify'
@@ -49,10 +70,12 @@ class SpotifyDownloader(BaseDownloader):
         """Download track as native m4a using spotDL"""
         logger.info(f"[Spotify] Processing: {url}")
         
+        if not self.spotdl_path:
+            raise DownloadError("spotdl binary not found. Is it installed in the virtual env?")
+
         download_dir = Path(__file__).parent.parent.parent / "downloads"
         download_dir.mkdir(exist_ok=True)
         
-        # Unique ID for this task to prevent file collisions
         task_id = os.urandom(4).hex()
         temp_dir = download_dir / f"spot_{task_id}"
         temp_dir.mkdir(exist_ok=True)
@@ -60,11 +83,9 @@ class SpotifyDownloader(BaseDownloader):
         try:
             self.update_progress('status_downloading', 20)
 
-            # ✅ THE FIX: Use spotDL to fetch native m4a
-            # --format m4a: Ensures we get AAC/M4A
-            # --bitrate disable: Prevents re-encoding/transcoding
+            # ✅ Execute spotdl using the detected absolute path
             cmd = [
-                "spotdl", "download", url,
+                self.spotdl_path, "download", url,
                 "--output", str(temp_dir),
                 "--format", "m4a",
                 "--bitrate", "disable",
@@ -84,15 +105,13 @@ class SpotifyDownloader(BaseDownloader):
                 logger.error(f"[Spotify] spotDL error: {error_msg}")
                 raise DownloadError(f"SpotDL failed: {error_msg}")
 
-            # Find the downloaded file
             files = list(temp_dir.glob("*.m4a"))
             if not files:
-                raise DownloadError("Audio file not found after download.")
+                raise DownloadError("Audio file not found after download")
 
             file_path = files[0]
-            track_title = file_path.stem.replace(".m4a", "")
+            track_title = file_path.stem
             
-            # Move file to main downloads folder and cleanup
             final_path = download_dir / f"{track_title}_{task_id}.m4a"
             shutil.move(str(file_path), str(final_path))
             
@@ -104,6 +123,5 @@ class SpotifyDownloader(BaseDownloader):
             raise DownloadError(f"Spotify error: {str(e)}")
         
         finally:
-            # Cleanup temp directory
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
