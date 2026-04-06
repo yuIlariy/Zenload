@@ -34,7 +34,7 @@ class DownloadWorker:
         self._current_message: Optional[Message] = None
         self._current_user_id: Optional[int] = None
         self._last_update_time = 0
-        self._update_interval = 4.0  # Slightly faster but safe
+        self._update_interval = 4.0
         self._start_time = None
 
     def build_progress_bar(self, percent: int, length: int = 12) -> str:
@@ -57,7 +57,6 @@ class DownloadWorker:
         )
 
     async def update_message(self, text: str):
-        """Throttled message updates to prevent Telegram FloodWait/Freezes"""
         try:
             now = time.time()
             if now - self._last_update_time < self._update_interval:
@@ -89,7 +88,6 @@ class DownloadWorker:
                 else:
                     text = f"⬇️ Downloading...\n<i>{status}</i>"
             else:
-                # Fallback for simple percentage integers
                 text = f"⬇️ Downloading...\n{self.build_progress_bar(progress)} {progress}%"
 
             await self.update_message(text)
@@ -106,20 +104,16 @@ class DownloadWorker:
 
         try:
             self._current_message = status_message
-            # Initialize progress tracking
             downloader.set_progress_callback(self._download_progress)
             self._start_time = time.time()
 
             await self.update_message("⬇️ <b>Processing...</b>")
 
-            # ✅ FIXED: Avoid redundant executor wrapping.
-            # Downloader.download is now natively async and handles its own threads.
             metadata, file_path = await downloader.download(url, format_id)
 
             if not file_path or not Path(file_path).exists():
                 raise Exception("File was not found after download completion.")
 
-            # Sanitize metadata length for Telegram limits
             if metadata and len(metadata) > 900:
                 metadata = metadata[:897] + "..."
 
@@ -127,7 +121,7 @@ class DownloadWorker:
             file_size = file_path_obj.stat().st_size
             chat_id = update.effective_chat.id
 
-            # Reset timer for upload speed calculation
+            # Reset timer for upload tracking
             self._start_time = time.time()
 
             is_audio = (
@@ -136,9 +130,8 @@ class DownloadWorker:
                 file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS
             )
 
-            # ---- UPLOAD PHASE ----
+            # ---- UPLOAD ----
             if file_size < 50 * 1024 * 1024:
-                # Small files via standard bot API
                 await self.update_message("⬆️ <b>Uploading...</b>")
 
                 with open(file_path, 'rb') as file:
@@ -156,12 +149,10 @@ class DownloadWorker:
                             supports_streaming=True
                         )
             else:
-                # Large files via Pyrogram (User-Bot Protocol)
                 await self.update_message("⬆️ <b>Uploading large file...</b>")
 
-                # ✅ FIXED: Using asyncio.timeout instead of wait_for (Python 3.11+)
                 try:
-                    async with asyncio.timeout(1200): # 20 minute limit
+                    async with asyncio.timeout(1200):
                         if is_audio:
                             sent_media = await self.pyro_client.send_audio(
                                 chat_id=chat_id,
@@ -180,30 +171,50 @@ class DownloadWorker:
                                 parse_mode=PyroParseMode.HTML
                             )
                 except asyncio.TimeoutError:
-                    raise Exception("Upload timed out (file too large or slow connection).")
+                    raise Exception("Upload timed out.")
 
-            # Final Cleanup sequence
-            self._last_update_time = 0 # Force the final message update
+            self._last_update_time = 0
             await self.update_message("✅ <b>Finished!</b>")
 
-            # ✅ RESTORED: Log media transfer to the log channel
+            # 🔥 AUTO LOGGER (SUCCESS)
             if self.activity_logger and sent_media:
+                total_time = time.time() - self._start_time
+
                 await self.activity_logger.log_media_transfer(
                     message=sent_media,
                     user_id=update.effective_user.id,
-                    url=url
+                    url=url,
+                    success=True,
+                    file_size=file_size,
+                    processing_time=total_time
                 )
 
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Download manager error: {e}", exc_info=True)
+
+            # 🔥 AUTO LOGGER (FAIL)
+            if self.activity_logger:
+                total_time = time.time() - self._start_time if self._start_time else 0
+
+                await self.activity_logger.log_media_transfer(
+                    message=update.effective_message,
+                    user_id=update.effective_user.id,
+                    url=url,
+                    success=False,
+                    file_size=None,
+                    processing_time=total_time
+                )
+
             try:
-                await update.effective_message.reply_text(f"❌ <b>Download failed:</b>\n<code>{str(e)}</code>", parse_mode='HTML')
+                await update.effective_message.reply_text(
+                    f"❌ <b>Download failed:</b>\n<code>{str(e)}</code>",
+                    parse_mode='HTML'
+                )
             except:
                 pass
 
         finally:
-            # ✅ RESTORED: Log download completion for /neko stats
             if self.activity_logger:
                 total_duration = time.time() - self._start_time if self._start_time else 0
                 actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
@@ -218,14 +229,16 @@ class DownloadWorker:
                     error=error_msg
                 )
 
-            # Always delete temp files
             if file_path and Path(file_path).exists():
-                try: Path(file_path).unlink()
-                except: pass
+                try:
+                    Path(file_path).unlink()
+                except:
+                    pass
             
-            # Always remove the "Downloading..." status message
-            try: await status_message.delete()
-            except: pass
+            try:
+                await status_message.delete()
+            except:
+                pass
 
 
 class DownloadManager:
@@ -239,7 +252,6 @@ class DownloadManager:
         self.activity_logger = activity_logger
         self.pyro_client = None
 
-        # Semaphore prevents the server from crashing under too many simultaneous downloads
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def process_download(self, downloader, url, update, status_message, format_id=None):
