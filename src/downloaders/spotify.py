@@ -27,12 +27,10 @@ class SpotifyDownloader(BaseDownloader):
 
     def _find_spotdl(self) -> Optional[str]:
         """Locates the spotdl binary relative to the virtual env"""
-        # 1. Try standard shutil search
         path = shutil.which("spotdl")
         if path:
             return path
             
-        # 2. Look in the current Python interpreter's directory
         python_bin_dir = Path(sys.executable).parent
         env_spotdl = python_bin_dir / "spotdl"
         
@@ -83,13 +81,15 @@ class SpotifyDownloader(BaseDownloader):
         try:
             self.update_progress('status_downloading', 20)
 
-            # ✅ Execute spotdl using the detected absolute path
+            # ✅ THE FIX: Removed --no-check-certificate and ensured correct positional arguments
+            # --format m4a: Ensures AAC/M4A
+            # --bitrate disable: Prevents re-encoding
             cmd = [
-                self.spotdl_path, "download", url,
+                self.spotdl_path, 
+                "download", url,
                 "--output", str(temp_dir),
                 "--format", "m4a",
-                "--bitrate", "disable",
-                "--no-check-certificate"
+                "--bitrate", "disable"
             ]
 
             process = await asyncio.create_subprocess_exec(
@@ -103,16 +103,22 @@ class SpotifyDownloader(BaseDownloader):
             if process.returncode != 0:
                 error_msg = stderr.decode().strip()
                 logger.error(f"[Spotify] spotDL error: {error_msg}")
-                raise DownloadError(f"SpotDL failed: {error_msg}")
+                # We only raise if it's not a simple warning
+                if "error" in error_msg.lower():
+                    raise DownloadError(f"SpotDL failed: {error_msg}")
 
+            # Find the downloaded file
             files = list(temp_dir.glob("*.m4a"))
             if not files:
-                raise DownloadError("Audio file not found after download")
+                # If m4a isn't found, check if spotdl used a different extension despite the flag
+                files = list(temp_dir.glob("*.*"))
+                if not files:
+                    raise DownloadError("Audio file not found after download")
 
             file_path = files[0]
             track_title = file_path.stem
             
-            final_path = download_dir / f"{track_title}_{task_id}.m4a"
+            final_path = download_dir / f"{track_title}_{task_id}{file_path.suffix}"
             shutil.move(str(file_path), str(final_path))
             
             caption = self._build_caption(url, track_title)
