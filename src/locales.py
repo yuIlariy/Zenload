@@ -20,7 +20,6 @@ LOCALES: Dict[str, Dict[str, str]] = {
             "/donate - Поддержать\n\n"
             "🛸 <i>Powered by</i> <a href='https://t.me/xspes'>NAm</a>"
         ),
-
         'btn_settings': "Настройки",
         'btn_help': "Помощь",
         'btn_language': "Язык",
@@ -108,25 +107,25 @@ LOCALES: Dict[str, Dict[str, str]] = {
 
         'payment_success': "Спасибо за вашу поддержку!",
 
+        # ✅ UPDATED
         'group_welcome': (
-            "Привет! Используйте команду /zen с ссылкой для загрузки видео или музыки.\n"
-            "Примеры:\n"
-            "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n"
-            "• /zen https://music.yandex.ru/album/123/track/456"
+            "Hi👋 <b>Добро пожаловать!</b>\n\n"
+            "📥 Этот бот скачивает видео и музыку\n\n"
+            "🚀 Используйте команду /zen с ссылкой для загрузки видео или музыки\n\n"
+            "🎬 Пример:\n"
+            "<code>/zen https://youtu.be/3R0dofgpxLs</code>"
         ),
 
-        # 🔥 ADDED ADMIN VERSION
+        # ✅ ADDED
         'group_welcome_admin': (
             "👑 <b>Привет, администратор!</b>\n\n"
-            "👥 Вы управляете этой группой с помощью бота.\n\n"
-            "⚙️ Используйте <b>/settings</b> для настройки:\n"
-            "• Язык\n"
-            "• Качество по умолчанию\n\n"
-            "🚀 Используйте <b>/zen</b> с ссылкой для загрузки:\n"
-            "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n"
-            "• /zen https://music.yandex.ru/album/123/track/456"
+            "📥 Этот бот скачивает видео и музыку в группе\n\n"
+            "⚙️ Используйте <b>/settings</b>, чтобы изменить:\n"
+            "• 🌍 Язык\n"
+            "• 🎞 Качество\n\n"
+            "🚀 Используйте команду /zen с ссылкой для загрузки видео или музыки\n\n"
+            "🎬 Пример:\n"
+            "<code>/zen https://youtu.be/3R0dofgpxLs</code>"
         ),
 
         'missing_url': "Пожалуйста, укажите ссылку после команды /zen",
@@ -253,25 +252,25 @@ LOCALES: Dict[str, Dict[str, str]] = {
 
         'payment_success': "Thank you for your support!",
 
+        # ✅ UPDATED
         'group_welcome': (
-            "Hi! Use the /zen command with a URL to download videos or music.\n"
-            "Examples:\n"
-            "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n"
-            "• /zen https://music.yandex.ru/album/123/track/456"
+            "Hi👋 <b>Welcome!</b>\n\n"
+            "📥 This bot downloads videos and music\n\n"
+            "🚀 Use the /zen command with a URL to download videos or music\n\n"
+            "🎬 Example:\n"
+            "<code>/zen https://youtu.be/3R0dofgpxLs</code>"
         ),
 
-        # 🔥 ADDED ADMIN VERSION
+        # ✅ ADDED
         'group_welcome_admin': (
             "👑 <b>Hello Admin!</b>\n\n"
-            "👥 You are managing this group with the bot.\n\n"
-            "⚙️ Use <b>/settings</b> to configure:\n"
-            "• Language\n"
-            "• Default quality\n\n"
-            "🚀 Use <b>/zen</b> with a URL to download media:\n"
-            "• /zen https://www.instagram.com/p/...\n"
-            "• /zen https://open.spotify.com/track/...\n"
-            "• /zen https://music.yandex.ru/album/123/track/456"
+            "📥 This bot downloads videos and music in this group\n\n"
+            "⚙️ Use <b>/settings</b> to change:\n"
+            "• 🌍 Language\n"
+            "• 🎞 Default quality\n\n"
+            "🚀 Use the /zen command with a URL to download videos or music\n\n"
+            "🎬 Example:\n"
+            "<code>/zen https://youtu.be/3R0dofgpxLs</code>"
         ),
 
         'missing_url': "Please provide a URL after the /zen command",
@@ -292,6 +291,7 @@ LOCALES: Dict[str, Dict[str, str]] = {
         'error_rate_limit': "Too many requests. Please wait a few seconds."
     }
 }
+
 
 class Localization:
     @staticmethod
