@@ -8,7 +8,6 @@ import time
 from collections import defaultdict
 import inspect
 import pyrogram
-from html import escape
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -90,22 +89,6 @@ class DownloadWorker:
 
         await self.update_message(text)
 
-    # ✅ NEW CLEAN CAPTION BUILDER
-    def build_caption(self, metadata: dict, source_url: str = None) -> str:
-        title = escape(str(metadata.get("title", "Unknown")))
-        uploader = escape(str(metadata.get("uploader", "Unknown")))
-        url = escape(source_url or metadata.get("webpage_url", ""))
-
-        caption = f"<b>{title}</b>\n\n"
-
-        if uploader:
-            caption += f"👤 {uploader}\n"
-
-        if url:
-            caption += f"🔗 <a href=\"{url}\">Watch</a>\n"
-
-        return caption.strip()
-
     async def process_download(self, downloader, url: str, update: Update,
                                status_message: Message, format_id: str = None):
 
@@ -134,14 +117,16 @@ class DownloadWorker:
             if not file_path or not Path(file_path).exists():
                 raise Exception("File not found after download task.")
 
-            # ✅ FIXED: build clean caption
-            if isinstance(metadata, dict):
-                caption = self.build_caption(metadata, url)
-            else:
-                # fallback if metadata is string
-                safe_text = escape(str(metadata))
-                caption = f"<b>{safe_text}</b>"
+            # ✅ USE CAPTION AS-IS (NO REFORMATTING)
+            caption = str(metadata) if metadata else ""
 
+            # ✅ LIGHT SAFETY FIX (without breaking HTML)
+            try:
+                caption = caption.replace("\x00", "")
+            except:
+                pass
+
+            # ✅ TELEGRAM LIMIT
             if len(caption) > 1024:
                 caption = caption[:1020] + "..."
 
