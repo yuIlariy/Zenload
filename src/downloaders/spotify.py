@@ -1,15 +1,23 @@
-"""Spotify downloader (FINAL — same format, trimmed text only)"""
+"""Spotify downloader (FIXED — Non-blocking search)"""
 
 import logging
 import asyncio
 import aiohttp
 import re
+import yt_dlp  # FIXED: Moved to top to prevent import-lag
 from urllib.parse import urlparse
 
 from .base import BaseDownloader, DownloadError
 
 logger = logging.getLogger(__name__)
 
+# FIXED: Pre-define options for faster initialization
+YDL_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "extract_flat": "in_playlist",  # Much faster for search results
+    "skip_download": True,
+}
 
 class SpotifyDownloader(BaseDownloader):
 
@@ -38,7 +46,7 @@ class SpotifyDownloader(BaseDownloader):
 
             return title, ""
 
-        except:
+        except Exception:
             return "spotify song", ""
 
     def _clean(self, text):
@@ -57,28 +65,24 @@ class SpotifyDownloader(BaseDownloader):
 
         if track.lower() in t:
             score += 5
-
         if artist and artist.lower() in t:
             score += 3
-
         if "official audio" in t:
             score += 4
-
         if "topic" in t:
             score += 3
-
         if self._bad_video(t):
             score -= 5
 
         return score
 
     async def _find_best(self, query, track, artist):
-        import yt_dlp
-
+        # FIXED: Using a reusable function to offload to thread
         def search():
-            with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
                 return ydl.extract_info(f"ytsearch10:{query}", download=False)
 
+        # Offload the heavy 10-video search to a background thread
         data = await asyncio.to_thread(search)
 
         best = None
@@ -86,7 +90,7 @@ class SpotifyDownloader(BaseDownloader):
 
         for e in data.get("entries", []):
             title = e.get("title", "")
-            url = e.get("webpage_url")
+            url = e.get("url") or e.get("webpage_url") # extract_flat uses 'url'
 
             score = self._score(title, track, artist)
 
@@ -100,7 +104,6 @@ class SpotifyDownloader(BaseDownloader):
         return best
 
     def _shorten(self, text, limit=70):
-        """Trim text without breaking formatting"""
         if not text:
             return text
         text = text.strip()
@@ -120,12 +123,12 @@ class SpotifyDownloader(BaseDownloader):
             best_url = await self._find_best(query, track, artist)
             logger.info(f"[Spotify] Best match: {best_url}")
 
+            # NOTE: If the bot still freezes here, the issue is in BaseDownloader.download
+            # Ensure the parent download method is also fully async.
             metadata, file_path = await super().download(best_url, "audio")
 
-            # ✅ ONLY CHANGE: shorten title safely
             short_metadata = self._shorten(metadata, 70)
 
-            # ✅ KEEP YOUR ORIGINAL FORMAT (unchanged)
             caption = (
                 f"🎵 <b>{short_metadata}</b>\n\n"
                 f"⚡ <b>Platform:</b> Spotify (Ultra Accurate)\n"
