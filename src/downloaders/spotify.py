@@ -69,7 +69,6 @@ class SpotifyDownloader(BaseDownloader):
         try:
             self.update_progress('status_downloading', 10)
 
-            # ✅ Start process WITHOUT reading stdout (no blocking)
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
@@ -77,36 +76,35 @@ class SpotifyDownloader(BaseDownloader):
             )
 
             start_time = time.time()
-            timeout = 120  # 🔥 HARD LIMIT (2 min)
-
+            timeout = 120  # seconds
             progress = 10
 
-            # ✅ Poll instead of readline (no freeze possible)
             while True:
+                # ✅ check if finished
                 if process.returncode is not None:
                     break
 
-                # 🔥 Kill if stuck too long
+                # 🔥 timeout kill
                 if time.time() - start_time > timeout:
-                    logger.error("[Spotify] Timeout — killing stuck process")
+                    logger.error("[Spotify] Timeout — killing process")
                     process.kill()
                     await process.wait()
                     raise DownloadError("Spotify download timed out")
 
-                # Fake smooth progress
+                # fake progress
                 if progress < 90:
                     progress += 1
                     self.update_progress('status_downloading', progress)
 
                 await asyncio.sleep(1)
 
-                # refresh returncode
-                await process.poll()
+            # ensure process fully closed
+            await process.wait()
 
             if process.returncode != 0:
                 raise DownloadError("SpotDL failed during execution")
 
-            # ✅ Find file EVEN if process hung earlier
+            # ✅ find file
             files = list(temp_dir.glob("*.m4a"))
             if not files:
                 files = list(temp_dir.glob("*.*"))
