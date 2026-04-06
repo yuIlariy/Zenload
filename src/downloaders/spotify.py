@@ -1,4 +1,4 @@
-"""Spotify downloader (PERFECT MATCH using Spotify oEmbed + smart search)"""
+"""Spotify downloader (ULTRA MATCH — best accuracy)"""
 
 import logging
 import asyncio
@@ -24,8 +24,8 @@ class SpotifyDownloader(BaseDownloader):
     async def get_formats(self, url: str) -> List[Dict]:
         return [{'id': 'audio', 'quality': 'High Quality Audio', 'ext': 'm4a/webm'}]
 
-    async def _get_spotify_metadata(self, url: str) -> str:
-        """🔥 PERFECT: Get exact title + artist using Spotify oEmbed"""
+    async def _get_spotify_metadata(self, url: str) -> Tuple[str, str]:
+        """Get exact track + artist"""
         try:
             api = f"https://open.spotify.com/oembed?url={url}"
 
@@ -35,42 +35,86 @@ class SpotifyDownloader(BaseDownloader):
 
             title = data.get("title", "")
 
-            # Example: "Drake - One Dance"
             if " - " in title:
                 artist, track = title.split(" - ", 1)
-                return f"{artist} {track}"
+                return track.strip(), artist.strip()
 
-            return title
+            return title.strip(), ""
 
         except Exception:
-            return "spotify song"
+            return "spotify song", ""
 
-    def _clean_query(self, query: str) -> str:
-        """Remove junk for better YouTube matching"""
-        query = re.sub(r"\(.*?\)", "", query)
-        query = re.sub(r"\[.*?\]", "", query)
-        query = re.sub(r"official video|lyrics|audio", "", query, flags=re.I)
-        return query.strip()
+    def _clean(self, text: str) -> str:
+        text = text.lower()
+        text = re.sub(r"\(.*?\)", "", text)
+        text = re.sub(r"\[.*?\]", "", text)
+        text = re.sub(r"official|video|lyrics|audio", "", text)
+        return text.strip()
+
+    def _score(self, yt_title: str, track: str, artist: str) -> int:
+        yt = self._clean(yt_title)
+        score = 0
+
+        if track.lower() in yt:
+            score += 3
+
+        if artist and artist.lower() in yt:
+            score += 2
+
+        return score
+
+    async def _find_best_match(self, query: str, track: str, artist: str) -> str:
+        import yt_dlp
+
+        ydl_opts = {
+            "quiet": True,
+            "skip_download": True
+        }
+
+        def search():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(f"ytsearch5:{query}", download=False)
+
+        data = await asyncio.to_thread(search)
+
+        best_url = None
+        best_score = -1
+
+        for entry in data.get("entries", []):
+            title = entry.get("title", "")
+            url = entry.get("webpage_url")
+
+            score = self._score(title, track, artist)
+
+            if score > best_score:
+                best_score = score
+                best_url = url
+
+        if not best_url:
+            raise DownloadError("No suitable YouTube match found")
+
+        return best_url
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, str]:
         try:
             logger.info(f"[Spotify] Processing: {url}")
 
-            # ✅ STEP 1: perfect metadata
-            query = await self._get_spotify_metadata(url)
-            query = self._clean_query(query)
+            # 🔥 STEP 1: exact metadata
+            track, artist = await self._get_spotify_metadata(url)
 
-            logger.info(f"[Spotify] Search query: {query}")
+            query = f"{artist} {track}".strip()
+            logger.info(f"[Spotify] Query: {query}")
 
-            # 🔥 STEP 2: smarter search (avoid wrong songs)
-            search_query = f"ytsearch1:{query} audio"
+            # 🔥 STEP 2: find BEST match
+            best_url = await self._find_best_match(query, track, artist)
+            logger.info(f"[Spotify] Best match: {best_url}")
 
-            # ✅ STEP 3: download (NO conversion → no freeze)
-            metadata, file_path = await super().download(search_query, "audio")
+            # 🔥 STEP 3: download (NO conversion)
+            metadata, file_path = await super().download(best_url, "audio")
 
             caption = (
                 f"🎵 <b>{metadata}</b>\n\n"
-                f"⚡ <b>Platform:</b> Spotify (Matched Audio)\n"
+                f"⚡ <b>Platform:</b> Spotify (Ultra Matched)\n"
                 f"🔗 <a href='{url}'>Watch on Spotify</a>\n\n"
                 f"📥 <b>@Tik_TokDownloader_Bot</b>"
             )
