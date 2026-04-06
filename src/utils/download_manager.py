@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 import inspect
 import pyrogram
-from html import escape  # ✅ FIX ADDED
+from html import escape
 
 from pyrogram.enums import ParseMode as PyroParseMode
 
@@ -90,6 +90,22 @@ class DownloadWorker:
 
         await self.update_message(text)
 
+    # ✅ NEW CLEAN CAPTION BUILDER
+    def build_caption(self, metadata: dict, source_url: str = None) -> str:
+        title = escape(str(metadata.get("title", "Unknown")))
+        uploader = escape(str(metadata.get("uploader", "Unknown")))
+        url = escape(source_url or metadata.get("webpage_url", ""))
+
+        caption = f"<b>{title}</b>\n\n"
+
+        if uploader:
+            caption += f"👤 {uploader}\n"
+
+        if url:
+            caption += f"🔗 <a href=\"{url}\">Watch</a>\n"
+
+        return caption.strip()
+
     async def process_download(self, downloader, url: str, update: Update,
                                status_message: Message, format_id: str = None):
 
@@ -118,11 +134,16 @@ class DownloadWorker:
             if not file_path or not Path(file_path).exists():
                 raise Exception("File not found after download task.")
 
-            # ✅ FIX: sanitize metadata
-            metadata = escape(metadata)
+            # ✅ FIXED: build clean caption
+            if isinstance(metadata, dict):
+                caption = self.build_caption(metadata, url)
+            else:
+                # fallback if metadata is string
+                safe_text = escape(str(metadata))
+                caption = f"<b>{safe_text}</b>"
 
-            if len(metadata) > 900:
-                metadata = metadata[:897] + "..."
+            if len(caption) > 1024:
+                caption = caption[:1020] + "..."
 
             file_path_obj = Path(file_path)
             file_size = file_path_obj.stat().st_size
@@ -144,13 +165,13 @@ class DownloadWorker:
                     if is_audio:
                         sent_media = await update.effective_message.reply_audio(
                             audio=file,
-                            caption=metadata,
+                            caption=caption,
                             parse_mode='HTML'
                         )
                     else:
                         sent_media = await update.effective_message.reply_video(
                             video=file,
-                            caption=metadata,
+                            caption=caption,
                             parse_mode='HTML',
                             supports_streaming=True
                         )
@@ -162,7 +183,7 @@ class DownloadWorker:
                         self.pyro_client.send_audio(
                             chat_id=chat_id,
                             audio=str(file_path),
-                            caption=metadata,
+                            caption=caption,
                             progress=self.upload_progress,
                             parse_mode=PyroParseMode.HTML
                         ),
@@ -173,7 +194,7 @@ class DownloadWorker:
                         self.pyro_client.send_video(
                             chat_id=chat_id,
                             video=str(file_path),
-                            caption=metadata,
+                            caption=caption,
                             supports_streaming=True,
                             progress=self.upload_progress,
                             parse_mode=PyroParseMode.HTML
@@ -189,10 +210,14 @@ class DownloadWorker:
 
         finally:
             if file_path:
-                try: Path(file_path).unlink()
-                except: pass
-            try: await status_message.delete()
-            except: pass
+                try:
+                    Path(file_path).unlink()
+                except:
+                    pass
+            try:
+                await status_message.delete()
+            except:
+                pass
 
 
 class DownloadManager:
