@@ -12,14 +12,20 @@ from ..config import YTDLP_OPTIONS, DOWNLOADS_DIR
 logger = logging.getLogger(__name__)
 
 class DownloadError(Exception):
+    """Custom exception for download errors"""
     pass
 
 class BaseDownloader(ABC):
+    """Base class for all platform-specific downloaders"""
+
     def __init__(self):
         self.ydl_opts = YTDLP_OPTIONS.get(self.platform_id(), {}).copy()
         self.ydl_opts.pop('format', None)
+
         self._progress_callback = None
         self._loop = None
+
+        # Throttle progress updates to prevent UI/Event loop congestion
         self._last_progress_time = 0
 
     def set_progress_callback(self, callback: Callable[[str, Any], None]):
@@ -34,14 +40,15 @@ class BaseDownloader(ABC):
             return
 
         now = self._loop.time()
-        # 2-second throttle is good for Telegram bots to prevent flood/freeze
+
+        # 2-second throttle is the "sweet spot" for Telegram bots
         if now - self._last_progress_time < 2:
             return
 
         self._last_progress_time = now
-        
-        # ✅ FIXED: Use run_coroutine_threadsafe ALONE. 
-        # Do not nest it inside call_soon_threadsafe.
+
+        # ✅ FIXED: Use run_coroutine_threadsafe ALONE.
+        # Nesting inside call_soon_threadsafe causes deadlocks in some async environments.
         asyncio.run_coroutine_threadsafe(
             self._progress_callback(status, progress), self._loop
         )
@@ -77,7 +84,6 @@ class BaseDownloader(ABC):
                 'nocheckcertificate': True,
                 'quiet': True,
                 'no_warnings': True,
-                'extract_flat': False, # Ensure we actually get the file for download
             })
 
             # Format Logic
@@ -87,21 +93,22 @@ class BaseDownloader(ABC):
                 current_opts['format'] = f"{format_id}+bestaudio/best"
 
             def _do_download():
-                # Re-initializing here ensures no thread-leakage
+                # Re-initializing context inside the thread prevents cross-thread state corruption
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
-            # Move heavy blocking network/IO to thread
+            # Move heavy blocking network/IO to a separate thread
             info = await asyncio.to_thread(_do_download)
 
-            # ✅ FIXED: Improved path finding
+            # ✅ FIXED: Direct file check logic
             file_path = None
             req_dl = info.get('requested_downloads', [])
-            if req_dl:
-                file_path = Path(req_dl[0].get('filepath', ''))
-
+            
+            if req_dl and 'filepath' in req_dl[0]:
+                file_path = Path(req_dl[0]['filepath'])
+            
+            # Fallback search limited strictly to the unique temp_filename
             if not file_path or not file_path.exists():
-                # Fallback search limited strictly to the unique temp_filename
                 for ext in ['m4a', 'webm', 'mp3', 'mp4', 'mkv']:
                     fallback = DOWNLOADS_DIR / f"{temp_filename}.{ext}"
                     if fallback.exists():
@@ -109,10 +116,10 @@ class BaseDownloader(ABC):
                         break
 
             if not file_path or not file_path.exists():
-                raise DownloadError("Download finished but file not found on disk.")
+                raise DownloadError("Download finished but the file could not be located.")
 
             return self.format_metadata(info), file_path
 
         except Exception as e:
-            logger.error(f"Download failed: {str(e)}")
+            logger.error(f"Download failed for {url}: {str(e)}", exc_info=True)
             raise DownloadError(f"Critical Download Error: {str(e)}")
