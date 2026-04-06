@@ -21,18 +21,16 @@ class BaseDownloader(ABC):
     """Base class for all platform-specific downloaders"""
 
     def __init__(self):
-        # Load platform-specific options
         self.ydl_opts = YTDLP_OPTIONS.get(self.platform_id(), {}).copy()
         self.ydl_opts.pop('format', None)
 
         self._progress_callback = None
         self._loop = None
 
-        # 🔥 FIX: throttle progress updates
+        # 🔥 Throttle progress updates
         self._last_progress_time = 0
 
     def set_progress_callback(self, callback: Callable[[str, Any], None]):
-        """Set callback for progress updates"""
         self._progress_callback = callback
         try:
             self._loop = asyncio.get_running_loop()
@@ -40,7 +38,6 @@ class BaseDownloader(ABC):
             self._loop = None
 
     def update_progress(self, status: str, progress: Any):
-        """Update progress safely (THROTTLED — prevents freeze)"""
         if not self._progress_callback:
             return
 
@@ -48,7 +45,7 @@ class BaseDownloader(ABC):
             loop = self._loop or asyncio.get_event_loop()
             now = loop.time()
 
-            # 🔥 LIMIT: max 1 update per second
+            # 🔥 limit updates (prevents freeze)
             if now - self._last_progress_time < 1:
                 return
 
@@ -63,7 +60,6 @@ class BaseDownloader(ABC):
             pass
 
     def _progress_hook(self, d: Dict[str, Any]):
-        """Standard progress hook for yt-dlp"""
         if d['status'] == 'downloading' and self._progress_callback:
             self.update_progress('downloading', d)
 
@@ -83,10 +79,8 @@ class BaseDownloader(ABC):
         pass
 
     def format_metadata(self, info: Dict) -> str:
-        """Improved metadata formatting"""
         metadata = []
 
-        # Use description for TikTok/Shorts if title is generic
         title = info.get('description') or info.get('title')
         if title:
             clean_title = re.sub(r'#\w+\s*', '', title).strip()
@@ -98,7 +92,6 @@ class BaseDownloader(ABC):
         return " | ".join(metadata)
 
     async def download(self, url: str, format_id: Optional[str] = None) -> Tuple[str, Path]:
-        """Download content with support for native m4a"""
         try:
             url = self.preprocess_url(url)
             current_opts = self.ydl_opts.copy()
@@ -107,18 +100,17 @@ class BaseDownloader(ABC):
             current_opts['outtmpl'] = str(DOWNLOADS_DIR / f"{temp_filename}.%(ext)s")
             current_opts['progress_hooks'] = [self._progress_hook]
 
-            # 🔥 DYNAMIC FORMAT HANDLING
+            # 🔥 FIXED FORMAT HANDLING (NO FFmpeg)
             if format_id == "m4a":
                 current_opts['format'] = "bestaudio[ext=m4a]/bestaudio/best"
+
             elif format_id == "audio":
-                current_opts['format'] = "bestaudio/best"
-                current_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
+                # 🔥 NO CONVERSION → prevents freezing
+                current_opts['format'] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+
             elif format_id:
                 current_opts['format'] = f"{format_id}+bestaudio/best"
+
             else:
                 current_opts['format'] = "bestvideo+bestaudio/best"
 
@@ -126,13 +118,11 @@ class BaseDownloader(ABC):
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
                     return ydl.extract_info(url, download=True)
 
-            # ✅ SAFE: run blocking in thread
             info = await asyncio.to_thread(download_content)
 
             if not info:
                 raise DownloadError("Failed to get content information")
 
-            # Find file
             downloaded_file = None
             for file in DOWNLOADS_DIR.glob(f"{temp_filename}.*"):
                 if file.is_file():
