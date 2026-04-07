@@ -34,7 +34,17 @@ class MessageHandlers:
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming messages with subscription verification"""
+        
+        # ✅ ADDED: Safely ignore messages that don't come from a real user (Channels, anonymous, etc.)
+        if not update.effective_user:
+            return
+            
         message = update.message
+        
+        # ✅ ADDED: Safely ignore if the update doesn't contain a standard message (like edited messages)
+        if not message:
+            return
+
         user_id = update.effective_user.id
         
         # 1. Force Subscribe Check
