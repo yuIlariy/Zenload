@@ -175,6 +175,8 @@ class UserActivityLogger:
         await self.db.global_stats.create_index("_id")
 
     async def log_download_attempt(self, user_id: int, url: str, platform: str):
+        if not getattr(self, 'db', None):
+            return None
         activity = UserActivity(
             user_id=user_id,
             action_type="download_start",
@@ -188,6 +190,9 @@ class UserActivityLogger:
     async def log_download_complete(self, user_id: int, url: str, success: bool,
                             file_type: str = None, file_size: int = None,
                             processing_time: float = None, error: str = None):
+        if not getattr(self, 'db', None):
+            return None
+            
         platform = self._extract_platform(url)
         activity = UserActivity(
             user_id=user_id,
@@ -240,6 +245,8 @@ class UserActivityLogger:
         }
 
     async def log_quality_selection(self, user_id: int, url: str, quality: str):
+        if not getattr(self, 'db', None):
+            return None
         activity = UserActivity(
             user_id=user_id,
             action_type="quality_select",
@@ -269,7 +276,11 @@ class UserActivityLogger:
             return "yandex"
         elif "soundcloud.com" in url_lower:
             return "soundcloud"
-        return "unknown"
+        elif "x.com" in url_lower or "twitter.com" in url_lower:
+            return "twitter"
+        elif "reddit.com" in url_lower:
+            return "reddit"
+        return "universal"  # Changed from 'unknown' to catch everything handled by the UniversalDownloader
 
 
 class UserSettingsManager:
