@@ -91,6 +91,20 @@ YTDLP_OPTIONS = {
         'no_warnings': True,
         'ignoreerrors': False,
         'quiet': True
+    },
+    
+    # ✅ ADDED: Configuration for the UniversalDownloader fallback
+    'universal': {
+        'nooverwrites': True,
+        'no_color': True,
+        'no_warnings': True,
+        'ignoreerrors': False,
+        'quiet': True,
+        'nocheckcertificate': True,
+        'http_headers': {
+            # Some sites block default yt-dlp user agents
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
     }
 }
 
