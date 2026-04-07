@@ -8,6 +8,7 @@ from .youtube import YouTubeDownloader
 from .soundcloud import SoundcloudDownloader
 from .facebook import FacebookDownloader
 from .spotify import SpotifyDownloader  # ✅ Added Spotify Import
+from .universal import UniversalDownloader  # ✅ Added Universal Import
 
 class DownloaderFactory:
     """Factory class to manage and create appropriate downloaders"""
@@ -20,7 +21,8 @@ class DownloaderFactory:
         YouTubeDownloader,
         SoundcloudDownloader,
         FacebookDownloader,
-        SpotifyDownloader  # ✅ Registered Spotify Downloader
+        SpotifyDownloader,  # ✅ Registered Spotify Downloader
+        UniversalDownloader # ✅ MUST BE LAST: Catch-all for any other site
     ]
 
     @classmethod
