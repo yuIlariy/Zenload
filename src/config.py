@@ -20,6 +20,7 @@ if TOKEN is None:
 # Platform specific configurations
 YTDLP_OPTIONS = {
     'instagram': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -33,6 +34,7 @@ YTDLP_OPTIONS = {
     },
 
     'tiktok': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -52,6 +54,7 @@ YTDLP_OPTIONS = {
     },
 
     'youtube': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -62,6 +65,7 @@ YTDLP_OPTIONS = {
     },
 
     'spotify': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         # ✅ REMOVED SpotDL - Using native yt-dlp audio settings
         'nooverwrites': True,
         'no_color': True,
@@ -73,6 +77,7 @@ YTDLP_OPTIONS = {
     },
 
     'facebook': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -85,6 +90,7 @@ YTDLP_OPTIONS = {
     },
 
     'yandex_music': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'format': 'bestaudio/best',
         'nooverwrites': True,
         'no_color': True,
@@ -95,6 +101,7 @@ YTDLP_OPTIONS = {
     
     # ✅ ADDED: Configuration for the UniversalDownloader fallback
     'universal': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
