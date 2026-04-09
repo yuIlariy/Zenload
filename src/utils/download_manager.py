@@ -95,34 +95,25 @@ class DownloadWorker:
             pass
 
     async def _schedule_folder_sweep(self):
-        """Waits 5 minutes, then deletes ALL files in the downloads folder older than 5 minutes."""
+        """Safety net: Waits 5 mins, then deletes any leftover files older than 5 mins."""
         try:
-            # Wait for 5 minutes (300 seconds)
             await asyncio.sleep(300)
             
-            # Locate the absolute path of the downloads folder
             downloads_dir = Path(__file__).parent.parent.parent / "downloads"
-            
             if not downloads_dir.exists() or not downloads_dir.is_dir():
                 return
                 
             current_time = time.time()
-            
-            # Loop through everything in the downloads folder
             for item in downloads_dir.iterdir():
                 if item.is_file():
                     try:
-                        # Check file's last modified timestamp
-                        file_age_seconds = current_time - item.stat().st_mtime
-                        
-                        # If the file is older than 5 minutes (290s to be safe), sweep it
-                        if file_age_seconds >= 290:
+                        if (current_time - item.stat().st_mtime) >= 290:
                             item.unlink()
-                            logger.info(f"🕒🧹 Swept old file: {item.name} (Age: {int(file_age_seconds)}s)")
+                            logger.info(f"🕒🧹 Safety net sweep deleted stuck file: {item.name}")
                     except Exception:
                         pass
         except Exception as e:
-            logger.error(f"⚠️ Folder sweep task failed: {e}")
+            logger.error(f"⚠️ Safety net task failed: {e}")
 
     async def process_download(self, downloader, url: str, update: Update,
                                status_message: Message, format_id: str = None):
@@ -245,41 +236,33 @@ class DownloadWorker:
                 pass
 
         finally:
-            # 1. Grab actual size for the logger before we let the timer start
-            actual_size = 0
+            if self.activity_logger:
+                total_duration = time.time() - self._start_time if self._start_time else 0
+                actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
+
+                await self.activity_logger.log_download_complete(
+                    user_id=update.effective_user.id,
+                    url=url,
+                    success=(sent_media is not None),
+                    file_type="audio" if is_audio else "video",
+                    file_size=actual_size,
+                    processing_time=total_duration,
+                    error=error_msg
+                )
+
             if file_path and Path(file_path).exists():
                 try:
-                    actual_size = Path(file_path).stat().st_size
-                except Exception:
+                    Path(file_path).unlink()
+                except:
                     pass
-
-            # 2. TRIGGER THE SMART SWEEP
-            # This runs in the background. It will wait 5 mins, then wipe ANY file older than 5 mins.
-            logger.info("🕒 Scheduled smart folder sweep in 5 minutes.")
-            asyncio.create_task(self._schedule_folder_sweep())
-
-            # 3. Safely log to database 
-            if self.activity_logger:
-                try:
-                    total_duration = time.time() - self._start_time if self._start_time else 0
-                    await self.activity_logger.log_download_complete(
-                        user_id=update.effective_user.id,
-                        url=url,
-                        success=(sent_media is not None),
-                        file_type="audio" if is_audio else "video",
-                        file_size=actual_size,
-                        processing_time=total_duration,
-                        error=error_msg
-                    )
-                except Exception as e:
-                    logger.error(f"Activity logger failed: {e}")
             
-            # 4. Delete the "Processing..." message
             try:
-                if status_message:
-                    await status_message.delete()
+                await status_message.delete()
             except:
                 pass
+            
+            # Start the 5-minute background sweep as a safety net
+            asyncio.create_task(self._schedule_folder_sweep())
 
 
 class DownloadManager:
