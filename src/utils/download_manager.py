@@ -94,6 +94,36 @@ class DownloadWorker:
         except Exception:
             pass
 
+    async def _schedule_folder_sweep(self):
+        """Waits 5 minutes, then deletes ALL files in the downloads folder older than 5 minutes."""
+        try:
+            # Wait for 5 minutes (300 seconds)
+            await asyncio.sleep(300)
+            
+            # Locate the absolute path of the downloads folder
+            downloads_dir = Path(__file__).parent.parent.parent / "downloads"
+            
+            if not downloads_dir.exists() or not downloads_dir.is_dir():
+                return
+                
+            current_time = time.time()
+            
+            # Loop through everything in the downloads folder
+            for item in downloads_dir.iterdir():
+                if item.is_file():
+                    try:
+                        # Check file's last modified timestamp
+                        file_age_seconds = current_time - item.stat().st_mtime
+                        
+                        # If the file is older than 5 minutes (290s to be safe), sweep it
+                        if file_age_seconds >= 290:
+                            item.unlink()
+                            logger.info(f"🕒🧹 Swept old file: {item.name} (Age: {int(file_age_seconds)}s)")
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"⚠️ Folder sweep task failed: {e}")
+
     async def process_download(self, downloader, url: str, update: Update,
                                status_message: Message, format_id: str = None):
 
@@ -215,7 +245,7 @@ class DownloadWorker:
                 pass
 
         finally:
-            # 1. Grab the file size BEFORE deleting it (for the logger)
+            # 1. Grab actual size for the logger before we let the timer start
             actual_size = 0
             if file_path and Path(file_path).exists():
                 try:
@@ -223,13 +253,10 @@ class DownloadWorker:
                 except Exception:
                     pass
 
-            # 2. DELETE THE FILE IMMEDIATELY (Priority #1 to save disk space)
-            if file_path and Path(file_path).exists():
-                try:
-                    Path(file_path).unlink()
-                    logger.info(f"🧹 Cleaned up file: {file_path}")
-                except Exception as e:
-                    logger.error(f"⚠️ Failed to delete file {file_path}: {e}")
+            # 2. TRIGGER THE SMART SWEEP
+            # This runs in the background. It will wait 5 mins, then wipe ANY file older than 5 mins.
+            logger.info("🕒 Scheduled smart folder sweep in 5 minutes.")
+            asyncio.create_task(self._schedule_folder_sweep())
 
             # 3. Safely log to database 
             if self.activity_logger:
