@@ -93,7 +93,7 @@ class CommandHandlers:
                 invite_link = chat.invite_link or await context.bot.export_chat_invite_link(self.UPDATES_CHANNEL_ID)
         except Exception as e:
             logger.error(f"Failed to generate invite link: {e}")
-            invite_link = "https://t.me/your_channel_username" # Fallback
+            invite_link = "https://t.me/OtherBs" # Fallback
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 Join Updates Channel", url=invite_link)],
