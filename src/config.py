@@ -99,7 +99,21 @@ YTDLP_OPTIONS = {
         'quiet': True
     },
     
-    # ✅ ADDED: Configuration for the UniversalDownloader fallback
+    # ✅ ADDED: Configuration for SoundCloud with Geo Bypass
+    'soundcloud': {
+        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Uses the invisible WARP tunnel
+        'geo_bypass': True,                   # ✅ Tricks SoundCloud's region lock!
+        'nooverwrites': True,
+        'no_color': True,
+        'no_warnings': True,
+        'ignoreerrors': False,
+        'quiet': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
+    },
+    
+    # ✅ Configuration for the UniversalDownloader fallback
     'universal': {
         'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
         'nooverwrites': True,
