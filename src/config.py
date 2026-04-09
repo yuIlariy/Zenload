@@ -20,7 +20,7 @@ if TOKEN is None:
 # Platform specific configurations
 YTDLP_OPTIONS = {
     'instagram': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -34,7 +34,7 @@ YTDLP_OPTIONS = {
     },
 
     'tiktok': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -54,7 +54,7 @@ YTDLP_OPTIONS = {
     },
 
     'youtube': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -65,19 +65,18 @@ YTDLP_OPTIONS = {
     },
 
     'spotify': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
-        # ✅ REMOVED SpotDL - Using native yt-dlp audio settings
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'quiet': True,
         'nocheckcertificate': True,
         'noplaylist': True,
-        'extract_flat': False, # Needs to be False here to allow the actual download
+        'extract_flat': False, 
     },
 
     'facebook': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -90,7 +89,7 @@ YTDLP_OPTIONS = {
     },
 
     'yandex_music': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'format': 'bestaudio/best',
         'nooverwrites': True,
         'no_color': True,
@@ -99,23 +98,24 @@ YTDLP_OPTIONS = {
         'quiet': True
     },
     
-    # ✅ ADDED: Configuration for SoundCloud with Geo Bypass
+    # ✅ FIXED: SoundCloud with Strict Cleanup Protections Added
     'soundcloud': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Uses the invisible WARP tunnel
-        'geo_bypass': True,                   # ✅ Tricks SoundCloud's region lock!
+        'proxy': 'socks5://127.0.0.1:40000',  
+        'geo_bypass': True,                   
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
         'ignoreerrors': False,
         'quiet': True,
+        'noplaylist': True,          # ⬅️ STOPS full albums from downloading
+        'keepvideo': False,          # ⬅️ STOPS temporary stream files from lingering
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
     },
     
-    # ✅ Configuration for the UniversalDownloader fallback
     'universal': {
-        'proxy': 'socks5://127.0.0.1:40000',  # ✅ Added WARP Proxy
+        'proxy': 'socks5://127.0.0.1:40000',  
         'nooverwrites': True,
         'no_color': True,
         'no_warnings': True,
@@ -123,7 +123,6 @@ YTDLP_OPTIONS = {
         'quiet': True,
         'nocheckcertificate': True,
         'http_headers': {
-            # Some sites block default yt-dlp user agents
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
     }
