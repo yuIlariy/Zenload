@@ -82,12 +82,32 @@ class CommandHandlers:
         except Exception:
             pass
 
+        # 🔥 FIXED: Smart Invite Link Generation
+        try:
+            chat = await context.bot.get_chat(self.UPDATES_CHANNEL_ID)
+            if chat.username:
+                # If channel is public, use the direct username link
+                invite_link = f"https://t.me/{chat.username}"
+            else:
+                # If channel is private, generate a fresh invite link
+                invite_link = chat.invite_link or await context.bot.export_chat_invite_link(self.UPDATES_CHANNEL_ID)
+        except Exception as e:
+            logger.error(f"Failed to generate invite link: {e}")
+            invite_link = "https://t.me/your_channel_username" # Fallback
+
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Join Channel", url="https://t.me/your_channel_username")]
+            [InlineKeyboardButton("📢 Join Updates Channel", url=invite_link)],
+            [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]
         ])
 
+        text = (
+            "⚠️ <b>Access Denied!</b>\n\n"
+            "To use this bot, you must be a member of our updates channel. "
+            "Join to stay updated with server status and new features!"
+        )
+
         await update.message.reply_text(
-            "⚠️ Join channel first",
+            text,
             reply_markup=keyboard,
             parse_mode=ParseMode.HTML
         )
@@ -188,7 +208,6 @@ class CommandHandlers:
                 pct = (v / downloads * 100) if downloads else 0
                 platform_text += f"• {k.capitalize()}: {pct:.1f}%\n"
 
-        # 🔥 FIXED TOP USERS (YOUR EXACT REQUIREMENT)
         top_users_text = ""
         for u in data["top_users"]:
             uid = u["_id"]
@@ -242,7 +261,6 @@ class CommandHandlers:
             caption=caption,
             parse_mode=ParseMode.HTML
         )
-        # ✅ EVERYTHING ELSE UNTOUCHED (your original file continues here exactly)
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command with photo and caption"""
