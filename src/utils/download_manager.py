@@ -215,28 +215,42 @@ class DownloadWorker:
                 pass
 
         finally:
-            if self.activity_logger:
-                total_duration = time.time() - self._start_time if self._start_time else 0
-                actual_size = Path(file_path).stat().st_size if file_path and Path(file_path).exists() else 0
+            # 1. Grab the file size BEFORE deleting it (for the logger)
+            actual_size = 0
+            if file_path and Path(file_path).exists():
+                try:
+                    actual_size = Path(file_path).stat().st_size
+                except Exception:
+                    pass
 
-                await self.activity_logger.log_download_complete(
-                    user_id=update.effective_user.id,
-                    url=url,
-                    success=(sent_media is not None),
-                    file_type="audio" if is_audio else "video",
-                    file_size=actual_size,
-                    processing_time=total_duration,
-                    error=error_msg
-                )
-
+            # 2. DELETE THE FILE IMMEDIATELY (Priority #1 to save disk space)
             if file_path and Path(file_path).exists():
                 try:
                     Path(file_path).unlink()
-                except:
-                    pass
+                    logger.info(f"🧹 Cleaned up file: {file_path}")
+                except Exception as e:
+                    logger.error(f"⚠️ Failed to delete file {file_path}: {e}")
+
+            # 3. Safely log to database 
+            if self.activity_logger:
+                try:
+                    total_duration = time.time() - self._start_time if self._start_time else 0
+                    await self.activity_logger.log_download_complete(
+                        user_id=update.effective_user.id,
+                        url=url,
+                        success=(sent_media is not None),
+                        file_type="audio" if is_audio else "video",
+                        file_size=actual_size,
+                        processing_time=total_duration,
+                        error=error_msg
+                    )
+                except Exception as e:
+                    logger.error(f"Activity logger failed: {e}")
             
+            # 4. Delete the "Processing..." message
             try:
-                await status_message.delete()
+                if status_message:
+                    await status_message.delete()
             except:
                 pass
 
