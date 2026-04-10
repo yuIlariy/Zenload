@@ -6,6 +6,6 @@ python-telegram-bot>=21.9
 requests>=2.32.3
 yandex_music>=2.2.0
 yt_dlp>=2025.01.26
-pyrogram>=2.0.106
+pyrofork>=2.0.0
 tgcrypto>=1.2.5
 psutil
