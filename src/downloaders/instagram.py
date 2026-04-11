@@ -117,7 +117,7 @@ class InstagramDownloader(BaseDownloader):
             f"🎬 <b>{video_title}</b>\n\n"
             f"⚡ Instagram\n\n"
             f"<a href=\"{url}\">✨ Video Link</a>\n\n"
-            f"📥 Downloaded via: @Tik_TokDownloader_Bot"
+            f"📥 Downloader: @Tik_TokDownloader_Bot"
         )
         
         if file_path and file_path.exists():
@@ -148,7 +148,7 @@ class InstagramDownloader(BaseDownloader):
                 f"🎬 <b>{fallback_title}</b>\n\n"
                 f"⚡ Instagram\n\n"
                 f"<a href=\"{url}\">✨ Video Link</a>\n\n"
-                f"📥 Downloaded via: @Tik_TokDownloader_Bot"
+                f"📥 Downloader: @Tik_TokDownloader_Bot"
             )
 
             # Find file
