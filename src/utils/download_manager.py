@@ -151,24 +151,40 @@ class DownloadWorker:
                 file_path_obj.suffix.lower() in self.AUDIO_EXTENSIONS
             )
 
+            # --- FETCH VIDEO THUMBNAIL ---
+            thumb_path = None
+            if not is_audio:
+                base_name = file_path_obj.stem
+                thumb_obj = file_path_obj.parent / f"{base_name}.jpg"
+                if thumb_obj.exists():
+                    thumb_path = str(thumb_obj)
+
             # ---- UPLOAD ----
             if file_size < 50 * 1024 * 1024:
                 await self.update_message("⬆️ <b>Uploading...</b>")
 
                 with open(file_path, 'rb') as file:
-                    if is_audio:
-                        sent_media = await update.effective_message.reply_audio(
-                            audio=file,
-                            caption=metadata,
-                            parse_mode='HTML'
-                        )
-                    else:
-                        sent_media = await update.effective_message.reply_video(
-                            video=file,
-                            caption=metadata,
-                            parse_mode='HTML',
-                            supports_streaming=True
-                        )
+                    # Only open thumb file if it's a video and the image exists
+                    thumb_file = open(thumb_path, 'rb') if thumb_path else None
+                    
+                    try:
+                        if is_audio:
+                            sent_media = await update.effective_message.reply_audio(
+                                audio=file,
+                                caption=metadata,
+                                parse_mode='HTML'
+                            )
+                        else:
+                            sent_media = await update.effective_message.reply_video(
+                                video=file,
+                                caption=metadata,
+                                thumbnail=thumb_file,  # ⬅️ Attaches video preview
+                                parse_mode='HTML',
+                                supports_streaming=True
+                            )
+                    finally:
+                        if thumb_file:
+                            thumb_file.close()
             else:
                 await self.update_message("⬆️ <b>Uploading large file...</b>")
 
@@ -187,6 +203,7 @@ class DownloadWorker:
                                 chat_id=chat_id,
                                 video=str(file_path),
                                 caption=metadata,
+                                thumb=thumb_path,  # ⬅️ Pyrofork grabs the image automatically
                                 supports_streaming=True,
                                 progress=self.upload_progress,
                                 parse_mode=PyroParseMode.HTML
