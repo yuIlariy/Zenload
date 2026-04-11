@@ -28,6 +28,8 @@ YTDLP_OPTIONS = {
         'cookiefile': str(COOKIES_DIR / 'instagram.txt'),
         'quiet': True,
         'no_check_certificate': True,
+        'writethumbnail': True,  # ✅ FETCH THUMBNAIL
+        'postprocessors': [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}], # ✅ FORCE JPG
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
@@ -41,6 +43,8 @@ YTDLP_OPTIONS = {
         'ignoreerrors': False,
         'quiet': True,
         'cookiefile': str(COOKIES_DIR / 'tiktok.txt'),
+        'writethumbnail': True,  # ✅ FETCH THUMBNAIL
+        'postprocessors': [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}], # ✅ FORCE JPG
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -61,6 +65,8 @@ YTDLP_OPTIONS = {
         'ignoreerrors': False,
         'quiet': True,
         'cookiefile': str(COOKIES_DIR / 'youtube.txt'),
+        'writethumbnail': True,  # ✅ FETCH THUMBNAIL
+        'postprocessors': [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}], # ✅ FORCE JPG
         'nocheckcertificate': True
     },
 
@@ -83,6 +89,8 @@ YTDLP_OPTIONS = {
         'ignoreerrors': False,
         'quiet': True,
         'cookiefile': str(COOKIES_DIR / 'facebook.txt'),
+        'writethumbnail': True,  # ✅ FETCH THUMBNAIL
+        'postprocessors': [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}], # ✅ FORCE JPG
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
@@ -98,7 +106,6 @@ YTDLP_OPTIONS = {
         'quiet': True
     },
     
-    # ✅ FIXED: SoundCloud with Strict Cleanup Protections Added
     'soundcloud': {
         'proxy': 'socks5://127.0.0.1:40000',  
         'geo_bypass': True,                   
@@ -107,8 +114,8 @@ YTDLP_OPTIONS = {
         'no_warnings': True,
         'ignoreerrors': False,
         'quiet': True,
-        'noplaylist': True,          # ⬅️ STOPS full albums from downloading
-        'keepvideo': False,          # ⬅️ STOPS temporary stream files from lingering
+        'noplaylist': True,
+        'keepvideo': False,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
@@ -122,6 +129,8 @@ YTDLP_OPTIONS = {
         'ignoreerrors': False,
         'quiet': True,
         'nocheckcertificate': True,
+        'writethumbnail': True,  # ✅ FETCH THUMBNAIL
+        'postprocessors': [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}], # ✅ FORCE JPG
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
